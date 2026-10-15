@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pokémon Red 3D — Kanto Adventure</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <script type="module" crossorigin src="./assets/index-CBnYTbYW.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-D1NvqsXK.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="vignette"></div>
+
+<!-- Top HUD -->
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <div id="hud-location">PALLET TOWN</div>
+    <div id="hud-hint">WASD move · E talk · Shift run · M menu</div>
+  </div>
+  <div id="hud-right">
+    <div class="hud-chip" id="hud-money">₽ 3000</div>
+    <div class="hud-chip" id="hud-balls">◉ 5</div>
+    <div class="hud-chip" id="hud-badges">★ 0</div>
+    <div class="hud-chip" id="hud-dex">DEX 0/24</div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden"></div>
+
+<!-- Dialog box -->
+<div id="dialog" class="hidden">
+  <div id="dialog-name">OAK</div>
+  <div id="dialog-text"></div>
+  <div id="dialog-choices"></div>
+  <div id="dialog-next">▼ E / SPACE</div>
+</div>
+
+<!-- Main menu -->
+<div id="menu" class="panel hidden">
+  <h2>MENU</h2>
+  <div class="menu-grid">
+    <button data-act="pokedex">📖 POKéDEX</button>
+    <button data-act="pokemon">◉ POKéMON</button>
+    <button data-act="bag">🎒 BAG</button>
+    <button data-act="save">💾 SAVE</button>
+    <button data-act="help">❓ HELP</button>
+    <button data-act="close">✖ CLOSE</button>
+  </div>
+  <div id="menu-body"></div>
+</div>
+
+<!-- Title screen -->
+<div id="title">
+  <div id="title-inner">
+    <div id="title-kicker">A FAN REMAKE · 3D · DESKTOP</div>
+    <h1><span class="red">POKéMON</span> <span class="ver">RED 3D</span></h1>
+    <div id="title-sub">PALLET → VIRIDIAN · TALL GRASS · BROCK · RIVAL</div>
+    <div id="title-mons">◉ ▼ ●</div>
+    <button id="btn-start">▶ NEW / CONTINUE JOURNEY</button>
+    <button id="btn-continue" class="hidden">↻ CONTINUE SAVED GAME</button>
+    <div id="title-controls">WASD / ARROWS move · MOUSE orbit · WHEEL zoom · E talk · SHIFT run · ESC menu</div>
+    <div id="title-note">Headphones on · sound is chiptune WebAudio · no assets downloaded</div>
+  </div>
+</div>
+
+<!-- Oak intro -->
+<div id="intro" class="panel hidden">
+  <h2>PROF. OAK'S LAB</h2>
+  <p id="intro-text"></p>
+  <div id="starter-row"></div>
+  <div class="row">
+    <button id="btn-intro-next">NEXT ▼</button>
+  </div>
+</div>
+
+<!-- Battle UI -->
+<div id="battle" class="hidden">
+  <div id="battle-top">
+    <div class="bmon foe">
+      <div class="bmon-head"><span id="b-foe-name">PIDGEY</span><span id="b-foe-lv">Lv5</span></div>
+      <div class="hpbar"><div id="b-foe-hp"></div></div>
+      <div class="hpnum" id="b-foe-hpnum"></div>
+    </div>
+    <div class="bmon me">
+      <div class="bmon-head"><span id="b-me-name">CHARMANDER</span><span id="b-me-lv">Lv5</span></div>
+      <div class="hpbar"><div id="b-me-hp"></div></div>
+      <div class="hpnum" id="b-me-hpnum"></div>
+      <div class="xpbar"><div id="b-me-xp"></div></div>
+    </div>
+  </div>
+  <div id="battle-msg">A wild PIDGEY appeared!</div>
+  <div id="battle-menu">
+    <button data-b="fight">⚔ FIGHT</button>
+    <button data-b="bag">🎒 BAG</button>
+    <button data-b="mon">◉ POKéMON</button>
+    <button data-b="run">🏃 RUN</button>
+  </div>
+  <div id="battle-fight" class="hidden"></div>
+  <div id="battle-party" class="hidden"></div>
+  <div id="battle-bag" class="hidden"></div>
+</div>
+
+<!-- Party panel (overworld switch) -->
+<div id="party" class="panel hidden">
+  <h2>PARTY</h2>
+  <div id="party-list"></div>
+  <div class="row"><button id="party-close">CLOSE</button></div>
+</div>
+
+<!-- Help -->
+<div id="help" class="panel hidden">
+  <h2>HOW TO PLAY (DESKTOP)</h2>
+  <ul>
+    <li><b>Move:</b> WASD / Arrow keys. <b>Run:</b> hold Shift.</li>
+    <li><b>Camera:</b> drag mouse to orbit, wheel to zoom.</li>
+    <li><b>Talk / confirm:</b> E or Space or click. <b>Menu:</b> M or Esc.</li>
+    <li>Walk in <b>tall grass</b> for wild encounters. Catch with <b>Poké Balls</b>.</li>
+    <li>Heal at <b>home (mom)</b> or <b>Poké Center (north town)</b>. Buy balls at <b>Mart</b>.</li>
+    <li>Quest: pick starter → beat <b>RIVAL</b> west of lab → beat <b>BROCK</b> in gym → 2 badges = Champion!</li>
+  </ul>
+  <div class="row"><button id="help-close">GOT IT</button></div>
+</div>
+
+<!-- Win -->
+<div id="win" class="panel hidden">
+  <h2>🏆 KANTO CHAMPION!</h2>
+  <p id="win-text"></p>
+  <div class="row"><button id="win-close">KEEP EXPLORING</button></div>
+</div>
+
+<div id="flash"></div>
+<div id="loading">LOADING KANTO…</div>
+
+</body>
+</html>
