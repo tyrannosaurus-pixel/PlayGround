@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocket Yellow — Creature Collector (fan homage)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ffd23f'/%3E%3Ccircle cx='11' cy='13' r='3' fill='%23111'/%3E%3Ccircle cx='21' cy='13' r='3' fill='%23111'/%3E%3Ccircle cx='7' cy='19' r='3' fill='%23e84848'/%3E%3Ccircle cx='25' cy='19' r='3' fill='%23e84848'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#1a1c2c;--panel:#232741;--line:#3c4268;--txt:#f4f1de;--acc:#ffd23f;--acc2:#3ddad7}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);font-family:"Courier New",monospace}
+#wrap{max-width:1000px;margin:0 auto;padding:10px}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:3px solid var(--line);border-radius:10px;padding:8px 12px}
+header h1{font-size:18px;margin:0;color:var(--acc);letter-spacing:1px}
+.pill{background:#101220;border:2px solid var(--line);border-radius:20px;padding:3px 10px;font-size:12px}
+#padDot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#555;margin-right:6px;vertical-align:middle}
+#stage{position:relative;margin-top:10px}
+canvas{width:100%;height:auto;display:block;background:#0b0e1a;border:4px solid var(--line);border-radius:10px;image-rendering:pixelated}
+#touch{position:absolute;inset:auto 0 0 0;display:none;justify-content:space-between;padding:8px;pointer-events:none}
+.tbtn{pointer-events:auto;background:rgba(20,22,40,.75);border:2px solid var(--acc);color:var(--acc);border-radius:10px;font-size:18px;padding:10px 14px;user-select:none}
+#help{margin-top:10px;background:var(--panel);border:3px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.7}
+#help b{color:var(--acc)}#help .gp{color:var(--acc2)}
+footer{opacity:.7;font-size:11px;margin:8px 0 30px}
+@media(pointer:coarse){#touch{display:flex}}
+</style>
+</head>
+<body>
+<div id="wrap">
+<header>
+<h1>⚡ POCKET YELLOW <span style="font-size:11px;color:#fff">fan homage</span></h1>
+<span class="pill" id="hBadges">🎖 0/3</span>
+<span class="pill" id="hDex">📕 0 seen / 0 caught</span>
+<span class="pill" id="hMoney">💰 ¥3000</span>
+<span class="pill"><span id="padDot"></span><span id="hPad">no gamepad</span></span>
+<span class="pill" id="hLoc">PALLET TOWN</span>
+</header>
+<div id="stage">
+<canvas id="cv" width="960" height="600"></canvas>
+<div id="touch"><div><span class="tbtn" data-k="up">▲</span><span class="tbtn" data-k="left">◀</span><span class="tbtn" data-k="down">▼</span><span class="tbtn" data-k="right">▶</span></div><div><span class="tbtn" data-k="a">A</span><span class="tbtn" data-k="b">B</span><span class="tbtn" data-k="start">☰</span></div></div>
+</div>
+<div id="help">
+<b>KEYBOARD:</b> Move <b>WASD / Arrows</b> · <b>Z / Enter / Space</b>=A confirm · <b>X / Esc</b>=B cancel/run · <b>E / M</b>=START menu · <b>Q / Tab</b>=DEX · <b>F</b>=fullscreen · <b>N</b>=mute &nbsp;|&nbsp;
+<span class="gp"><b>GAMEPAD:</b> Left-stick / D-pad move · <b>A(Ⓐ)</b> confirm · <b>B(Ⓑ)</b> cancel · <b>START(☰)</b> menu · <b>SELECT(⧉)</b> dex · <b>Y</b> run</span><br>
+🎯 Get your starter in the <b>LAB</b> → cut through tall grass → beat <b>BROCK, MISTY, SURGE</b> → face your <b>RIVAL at Vermilion</b>. Heal at red-roof CENTERS, shop at blue-roof MARTS. Progress autosaves.
+</div>
+<footer>Fan-made homage inspired by 90s handheld creature collectors. All art + audio are procedural originals. No Nintendo assets used.</footer>
+</div>
+<script>
+"use strict";
+/* ============ UTIL ============ */
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const ri=(a,b)=>Math.floor(rnd(a,b+1));
+const choice=a=>a[Math.floor(Math.random()*a.length)];
+const cv=$("cv"),ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+const W=960,H=600;
+/* ============ AUDIO ============ */
+let AC=null,muted=false,melodyTimer=null,melStep=0;
+function audio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}if(AC&&AC.state==="suspended")AC.resume();}
+function beep(f,d,type,v,slide){if(muted||!AC)return;try{const o=AC.createOscillator(),g=AC.createGain();o.type=type||"square";o.frequency.setValueAtTime(f,AC.currentTime);if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,slide),AC.currentTime+d);g.gain.setValueAtTime(v||0.06,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);}catch(e){}}
+const sfx={
+move(){beep(220,0.05,"square",0.03);},bump(){beep(90,0.12,"sawtooth",0.05);},
+confirm(){beep(660,0.07,"square",0.06);setTimeout(()=>beep(880,0.09,"square",0.06),70);},
+cancel(){beep(440,0.08,"square",0.05);setTimeout(()=>beep(300,0.1,"square",0.05),80);},
+heal(){[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,0.15,"triangle",0.07),i*110));},
+catch_(){[400,500,650,800,1000].forEach((f,i)=>setTimeout(()=>beep(f,0.12,"square",0.06),i*100));},
+flee(){beep(700,0.25,"sawtooth",0.05,150);},
+hit(){beep(160,0.15,"sawtooth",0.08,60);},
+super_(){beep(200,0.25,"sawtooth",0.09,50);setTimeout(()=>beep(150,0.2,"sawtooth",0.08,40),120);},
+faint(){beep(500,0.5,"square",0.06,80);},
+fanfare(){[523,523,523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,0.18,"square",0.07),i*130));},
+ball(){beep(900,0.06,"square",0.05,300);},
+enc(){beep(150,0.3,"sawtooth",0.07,900);}
+};
+const MELODY=[659,0,784,0,880,784,659,523,587,659,0,523,0,0,659,0,784,0,1046,880,784,659,587,0,523,0,0,0];
+function startMusic(){if(melodyTimer)return;melodyTimer=setInterval(()=>{if(muted||!AC||state!=="over"&&state!=="title")return;const f=MELODY[melStep%MELODY.length];melStep++;if(f)beep(f,0.16,"triangle",0.025);},210);}
+/* ============ DATA: TYPES / MOVES / SPECIES ============ */
+const CHART={Electric:{Water:2,Flying:2,Grass:0.5,Electric:0.5,Ground:0},Fire:{Grass:2,Bug:2,Ice:2,Fire:0.5,Water:0.5,Rock:0.5},Water:{Fire:2,Ground:2,Rock:2,Water:0.5,Grass:0.5},Grass:{Water:2,Ground:2,Rock:2,Fire:0.5,Grass:0.5,Flying:0.5,Bug:0.5},Normal:{Rock:0.5,Ghost:0},Flying:{Grass:2,Bug:2,Electric:0.5,Rock:0.5},Bug:{Grass:2,Psychic:2,Fire:0.5,Flying:0.5},Poison:{Grass:2,Bug:2,Poison:0.5,Ground:0.5,Rock:0.5},Ground:{Fire:2,Electric:2,Poison:2,Grass:0.5,Flying:0},Rock:{Fire:2,Flying:2,Bug:2,Ground:0.5},Psychic:{Poison:2,Psychic:0.5},Ghost:{Psychic:2,Ghost:2,Normal:0}};
+function effOf(mtype,t1,t2){let m=1;const r=CHART[mtype]||{};if(r[t1]!==undefined)m*=r[t1];if(t2&&r[t2]!==undefined)m*=r[t2];return m;}
+const MOVES={
+tackle:{n:"TACKLE",t:"Normal",p:40,acc:100},scratch:{n:"SCRATCH",t:"Normal",p:40,acc:100},pound:{n:"POUND",t:"Normal",p:40,acc:100},quick:{n:"QUICK ATK",t:"Normal",p:45,acc:100},bite:{n:"BITE",t:"Normal",p:55,acc:100},slash:{n:"SLASH",t:"Normal",p:65,acc:95},hyper:{n:"HYPERFANG",t:"Normal",p:70,acc:90},
+growl:{n:"GROWL",t:"Normal",p:0,acc:100,fx:"atk-"},leer:{n:"LEER",t:"Normal",p:0,acc:100,fx:"def-"},tail:{n:"TAIL WHIP",t:"Normal",p:0,acc:100,fx:"def-"},harden:{n:"HARDEN",t:"Normal",p:0,acc:100,fx:"def+"},string:{n:"STRINGSHOT",t:"Bug",p:0,acc:95,fx:"spd-"},
+thunder:{n:"THNDRSHOCK",t:"Electric",p:45,acc:100},bolt:{n:"THUNDERBOLT",t:"Electric",p:90,acc:100},wave:{n:"THNDR WAVE",t:"Electric",p:0,acc:100,fx:"par"},
+ember:{n:"EMBER",t:"Fire",p:45,acc:100},flame:{n:"FLAMETHRWR",t:"Fire",p:90,acc:100},
+wgun:{n:"WATER GUN",t:"Water",p:45,acc:100},bubble:{n:"BUBBLEBEAM",t:"Water",p:65,acc:100},
+vine:{n:"VINE WHIP",t:"Grass",p:45,acc:100},razor:{n:"RAZOR LEAF",t:"Grass",p:60,acc:95},
+gust:{n:"GUST",t:"Flying",p:45,acc:100},wing:{n:"WING ATK",t:"Flying",p:60,acc:100},
+sting:{n:"POISONSTNG",t:"Poison",p:40,acc:100},rock:{n:"ROCK THROW",t:"Rock",p:55,acc:90},
+conf:{n:"CONFUSION",t:"Psychic",p:55,acc:100},lick:{n:"LICK",t:"Ghost",p:35,acc:100},dig:{n:"DIG",t:"Ground",p:60,acc:100},karate:{n:"KARATECHP",t:"Normal",p:55,acc:100},recover:{n:"RECOVER",t:"Normal",p:0,acc:100,fx:"heal"}};
+const SPECIES={
+pikachu:{n:"PIKACHU",t1:"Electric",c:"#ffd23f",shape:"mouse",hp:35,atk:55,def:40,spd:90,catch:190,xp:82,evo:{to:"raichu",lv:22},moves:[[1,"thunder"],[1,"growl"],[1,"tail"],[6,"quick"],[12,"bolt"]],dex:"Stores electricity in its cheeks. Follows its trainer everywhere."},
+raichu:{n:"RAICHU",t1:"Electric",c:"#f0a832",shape:"mouse",hp:60,atk:90,def:55,spd:110,catch:75,xp:122,moves:[[1,"thunder"],[1,"quick"],[1,"tail"],[24,"bolt"]],dex:"Its long tail discharges crackling shocks."},
+charmander:{n:"CHARMANDR",t1:"Fire",c:"#ff9a3c",shape:"lizard",hp:39,atk:52,def:43,spd:65,catch:45,xp:62,evo:{to:"charmeleon",lv:16},moves:[[1,"scratch"],[1,"growl"],[9,"ember"]],dex:"The flame on its tail shows its life force."},
+charmeleon:{n:"CHARMELEON",t1:"Fire",c:"#f0663c",shape:"lizard",hp:58,atk:64,def:58,spd:80,catch:45,xp:142,evo:{to:"charizard",lv:36},moves:[[1,"scratch"],[1,"ember"],[20,"flame"]],dex:"Slashes foes with blazing claws."},
+charizard:{n:"CHARIZARD",t1:"Fire",t2:"Flying",c:"#e8562a",shape:"dragon",hp:78,atk:84,def:78,spd:100,catch:45,xp:209,moves:[[1,"ember"],[1,"scratch"],[30,"flame"],[34,"wing"]],dex:"Spits fire hot enough to melt rock."},
+squirtle:{n:"SQUIRTLE",t1:"Water",c:"#6ec6e8",shape:"turtle",hp:44,atk:48,def:65,spd:43,catch:45,xp:63,evo:{to:"wartortle",lv:16},moves:[[1,"tackle"],[1,"tail"],[8,"wgun"]],dex:"Hides in its shell and sprays water."},
+wartortle:{n:"WARTORTLE",t1:"Water",c:"#4ea3d8",shape:"turtle",hp:59,atk:63,def:80,spd:58,catch:45,xp:142,evo:{to:"blastoise",lv:36},moves:[[1,"tackle"],[1,"wgun"],[22,"bubble"]],dex:"Its furry tail is a symbol of long life."},
+blastoise:{n:"BLASTOISE",t1:"Water",c:"#3c78d8",shape:"turtle",hp:79,atk:83,def:100,spd:78,catch:45,xp:210,moves:[[1,"wgun"],[1,"bite"],[32,"bubble"]],dex:"Crushes foes under its heavy body."},
+bulbasaur:{n:"BULBASAUR",t1:"Grass",t2:"Poison",c:"#7dd87d",shape:"bulb",hp:45,atk:49,def:49,spd:45,catch:45,xp:64,evo:{to:"ivysaur",lv:16},moves:[[1,"tackle"],[1,"growl"],[7,"vine"]],dex:"A seed on its back grows at birth."},
+ivysaur:{n:"IVYSAUR",t1:"Grass",t2:"Poison",c:"#5cb85c",shape:"bulb",hp:60,atk:62,def:63,spd:60,catch:45,xp:142,evo:{to:"venusaur",lv:32},moves:[[1,"vine"],[1,"tackle"],[24,"razor"]],dex:"The bud blooms with sunlight."},
+venusaur:{n:"VENUSAUR",t1:"Grass",t2:"Poison",c:"#3f9e4d",shape:"bulb",hp:80,atk:82,def:83,spd:80,catch:45,xp:208,moves:[[1,"vine"],[1,"razor"],[30,"razor"]],dex:"Its flower gives off a soothing scent."},
+pidgey:{n:"PIDGEY",t1:"Normal",t2:"Flying",c:"#c8a878",shape:"bird",hp:40,atk:45,def:40,spd:56,catch:255,xp:55,evo:{to:"pidgeotto",lv:18},moves:[[1,"tackle"],[1,"gust"],[9,"quick"]],dex:"Common bird. Gusts up sand to blind foes."},
+pidgeotto:{n:"PIDGEOTTO",t1:"Normal",t2:"Flying",c:"#b08858",shape:"bird",hp:63,atk:60,def:55,spd:71,catch:120,xp:113,moves:[[1,"gust"],[1,"quick"],[22,"wing"]],dex:"Patrols a wide territory for prey."},
+rattata:{n:"RATTATA",t1:"Normal",c:"#b090f0",shape:"rat",hp:30,atk:56,def:35,spd:72,catch:255,xp:57,evo:{to:"raticate",lv:20},moves:[[1,"tackle"],[1,"tail"],[10,"quick"],[16,"hyper"]],dex:"Gnaws anything with its sharp fangs."},
+raticate:{n:"RATICATE",t1:"Normal",c:"#9070d0",shape:"rat",hp:55,atk:81,def:60,spd:97,catch:127,xp:116,moves:[[1,"quick"],[1,"bite"],[20,"hyper"]],dex:"Its hind feet are webbed for swimming."},
+caterpie:{n:"CATERPIE",t1:"Bug",c:"#7dd87d",shape:"bug",hp:45,atk:30,def:35,spd:45,catch:255,xp:53,evo:{to:"metapod",lv:7},moves:[[1,"tackle"],[1,"string"]],dex:"Eats leaves hungrily with big jaws."},
+metapod:{n:"METAPOD",t1:"Bug",c:"#5ca85c",shape:"cocoon",hp:50,atk:20,def:55,spd:30,catch:120,xp:72,evo:{to:"butterfree",lv:10},moves:[[1,"harden"]],dex:"Hard shell protects its soft body."},
+butterfree:{n:"BUTTERFREE",t1:"Bug",t2:"Flying",c:"#c890e8",shape:"butterfly",hp:60,atk:45,def:50,spd:70,catch:45,xp:160,moves:[[1,"conf"],[1,"gust"],[14,"wing"]],dex:"Scatters poisonous scales when it flaps."},
+weedle:{n:"WEEDLE",t1:"Bug",t2:"Poison",c:"#d8b060",shape:"bug",hp:40,atk:35,def:30,spd:50,catch:255,xp:52,evo:{to:"kakuna",lv:7},moves:[[1,"sting"],[1,"string"]],dex:"The stinger on its head is very venomous."},
+kakuna:{n:"KAKUNA",t1:"Bug",t2:"Poison",c:"#c09040",shape:"cocoon",hp:45,atk:25,def:50,spd:35,catch:120,xp:71,evo:{to:"beedrill",lv:10},moves:[[1,"harden"]],dex:"Waits inside its shell to evolve."},
+beedrill:{n:"BEEDRILL",t1:"Bug",t2:"Poison",c:"#e8d838",shape:"bee",hp:65,atk:80,def:40,spd:75,catch:45,xp:159,moves:[[1,"sting"],[12,"bite"]],dex:"Attacks in swarms with triple stingers."},
+geodude:{n:"GEODUDE",t1:"Rock",t2:"Ground",c:"#a89888",shape:"rock",hp:40,atk:80,def:100,spd:20,catch:255,xp:73,evo:{to:"onix",lv:25},moves:[[1,"tackle"],[1,"harden"],[11,"rock"]],dex:"Found on mountain trails. Punches hard."},
+onix:{n:"ONIX",t1:"Rock",t2:"Ground",c:"#989080",shape:"snake",hp:65,atk:60,def:130,spd:50,catch:45,xp:150,moves:[[1,"tackle"],[1,"rock"],[20,"dig"]],dex:"A giant rock snake that tunnels fast."},
+diglett:{n:"DIGLETT",t1:"Ground",c:"#b08050",shape:"mole",hp:35,atk:55,def:30,spd:90,catch:255,xp:81,moves:[[1,"scratch"],[12,"dig"]],dex:"Pops from the ground to startle walkers."},
+abra:{n:"ABRA",t1:"Psychic",c:"#e8c860",shape:"fox",hp:45,atk:40,def:35,spd:90,catch:200,xp:75,evo:{to:"gengar",lv:28},moves:[[1,"conf"]],dex:"Sleeps 18 hours a day, sensing danger."},
+machop:{n:"MACHOP",t1:"Normal",c:"#98a8c8",shape:"muscle",hp:70,atk:80,def:50,spd:35,catch:180,xp:88,moves:[[1,"karate"],[1,"leer"]],dex:"Trains every day with heavy boulders."},
+gastly:{n:"GASTLY",t1:"Ghost",t2:"Poison",c:"#8068c8",shape:"ghost",hp:40,atk:45,def:35,spd:80,catch:190,xp:95,evo:{to:"gengar",lv:25},moves:[[1,"lick"],[8,"conf"]],dex:"A gas creature that faints foes with licks."},
+gengar:{n:"GENGAR",t1:"Ghost",t2:"Poison",c:"#584890",shape:"ghost",hp:70,atk:75,def:65,spd:105,catch:45,xp:190,moves:[[1,"lick"],[1,"conf"],[28,"conf"]],dex:"Hides in shadows and steals body heat."},
+staryu:{n:"STARYU",t1:"Water",c:"#e8a878",shape:"star",hp:50,atk:55,def:55,spd:85,catch:225,xp:106,evo:{to:"starmie",lv:26},moves:[[1,"tackle"],[1,"harden"],[10,"wgun"]],dex:"Its red core flashes at night."},
+starmie:{n:"STARMIE",t1:"Water",t2:"Psychic",c:"#a878e8",shape:"star",hp:70,atk:75,def:80,spd:115,catch:60,xp:180,moves:[[1,"wgun"],[1,"conf"],[26,"bubble"]],dex:"Its core shines in seven colors."}};
+const DEX_ORDER=Object.keys(SPECIES);
+/* ============ MAPS ============ */
+function rows(a){const w=Math.max(...a.map(r=>r.length));return a.map(r=>r.padEnd(w," "));}
+const MAPS={
+pallet:{name:"PALLET TOWN",rows:rows([
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTHHHHTTTTPPPHHHHTTTTTT",
+"TTTHHHHTTTTPPPHHHHTTTTTT",
+"TTTHDDHTTTPPPTHDDHTTTTTT",
+"TTTHPPHTTTPPPTHPPHTTTTTT",
+"TTTPPPPPPPPPPPPPPPPTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT"]),
+warps:[{x:5,y:4,to:"house_in",tx:4,ty:5},{x:15,y:4,to:"lab_in",tx:5,ty:5},{x:12,y:0,to:"route1",tx:12,ty:14}],
+signs:[{x:13,y:6,t:"PALLET TOWN: home of the YELLOW hero!"}],
+npcs:[{x:9,y:8,s:"mom",d:["MOM: Don't go into tall grass without a friend!","MOM: Professor OAK is waiting in the LAB."]}]},
+house_in:{name:"YOUR HOUSE",rows:rows(["HHHHHHHHHH","H........H","H..BB....H","H........H","H........H","H...P....H","HHHH.DDDHH"]),warps:[{x:4,y:6,to:"pallet",tx:5,ty:5},{x:5,y:6,to:"pallet",tx:5,ty:5},{x:6,y:6,to:"pallet",tx:5,ty:5}],npcs:[{x:3,y:5,s:"mom",d:["MOM: You look tired... let me heal your team!",":heal"]}]},
+lab_in:{name:"OAK LAB",rows:rows(["HHHHHHHHHHHH","H..........H","H..BB..BB..H","H..........H","H..........H","H....P.....H","HHHHH..HHHHH"]),warps:[{x:5,y:6,to:"pallet",tx:15,ty:5},{x:6,y:6,to:"pallet",tx:15,ty:5}],npcs:[{x:5,y:2,s:"oak",d:[":starter"]},{x:3,y:2,s:"ball",d:["A spare POKE BALL. OAK is watching..."]},{x:4,y:2,s:"ball",d:["A spare POKE BALL. OAK is watching..."]},{x:7,y:2,s:"ball",d:["A spare POKE BALL. OAK is watching..."]},{x:8,y:2,s:"ball",d:["A spare POKE BALL. OAK is watching..."]}]},
+route1:{name:"ROUTE 1",rows:rows([
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT"]),
+warps:[{x:12,y:0,to:"viridian",tx:12,ty:14},{x:12,y:15,to:"pallet",tx:12,ty:1}],
+npcs:[{x:7,y:8,s:"boy",d:["Hiker: Tall grass hides wild friends! Weaken them, then throw a BALL."]}],
+trainers:[{x:13,y:8,n:"BUG CATCHR",team:[["caterpie",4],["weedle",4]],reward:120,sight:3,dir:"left",beaten:false,msg:"Let's see your BUG skills!"}]},
+viridian:{name:"VIRIDIAN CITY",rows:rows([
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTHHHHTTTTPPPHHHHHTTTTTT",
+"TTTHHHHTTTTPPPHHHHHTTTTTT",
+"TTTHDDHTTTTPPPHDDHTTTTTT",
+"TTTHPPHTTTTPPPHPPHTTTTTT",
+"TTTPPPPPPPPPPPPPPPPTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT"]),
+warps:[{x:5,y:3,to:"center_in",tx:4,ty:5,ret:{map:"viridian",x:5,y:4}},{x:15,y:3,to:"mart_in",tx:4,ty:5,ret:{map:"viridian",x:15,y:4}},{x:12,y:0,to:"forest",tx:12,ty:13},{x:12,y:15,to:"route1",tx:12,ty:1}],
+signs:[{x:9,y:6,t:"VIRIDIAN CITY: evergreen gateway."}],
+npcs:[{x:6,y:8,s:"girl",d:["NURSE JOY's CENTER (red roof) heals free! MART (blue roof) sells BALLS."]},{x:16,y:8,s:"old",d:["Old man: Pewter GYM lies past the FOREST to the north!"]}]},
+center_in:{name:"POKE CENTER",rows:rows(["HHHHHHHHHH","H....CC...H","H....CC...H","H........H","H........H","H...PP...H","HHHH..HHHH"]),warps:[{x:4,y:6,to:"viridian",tx:5,ty:4,back:1},{x:5,y:6,to:"viridian",tx:5,ty:4,back:1}],npcs:[{x:4,y:2,s:"joy",d:["JOY: Welcome! Let me heal your team!",":heal"]}]},
+mart_in:{name:"POKE MART",rows:rows(["HHHHHHHHHH","H....MM...H","H....MM...H","H........H","H........H","H...PP...H","HHHH..HHHH"]),warps:[{x:4,y:6,to:"viridian",tx:15,ty:4,back:1},{x:5,y:6,to:"viridian",tx:15,ty:4,back:1}],npcs:[{x:4,y:2,s:"mart",d:[":shop"]}]},
+forest:{name:"VIRIDIAN FOREST",rows:rows([
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTtttttttttPPPtttttttttT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT"]),
+warps:[{x:12,y:0,to:"pewter",tx:12,ty:14},{x:12,y:15,to:"viridian",tx:12,ty:1}],
+trainers:[{x:8,y:5,n:"LASS AMY",team:[["caterpie",5],["pidgey",5]],reward:150,sight:3,dir:"down",msg:"The forest is full of BUGS!"},{x:16,y:9,n:"BUG CATCHR",team:[["weedle",6],["kakuna",6]],reward:140,sight:3,dir:"left",msg:"My WEEDLE stings!"}],
+npcs:[{x:7,y:3,s:"boy",d:["Camping kid: METAPOD only knows HARDEN. Switch out!"]}]},
+pewter:{name:"PEWTER CITY",rows:rows([
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTHHHHHTTTTTTHHHHHHTTTT",
+"TTTHGGGHTTTTTTHYYYYHTTTT",
+"TTTHGDDGHTTPPPHYDDYHTTTT",
+"TTTHGPPGHTTPPPHYPPYHTTTT",
+"TTTPPPPPPPPPPPPPPPPTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTTttTTTTPPPtttttTTTTT",
+"TTTTTTTTTTPPPPPPPPPPPPPP",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT"]),
+warps:[{x:6,y:3,to:"gym1",tx:4,ty:5},{x:16,y:3,to:"center_in",tx:4,ty:5,ret:{map:"pewter",x:16,y:4}},{x:12,y:15,to:"forest",tx:12,ty:13},{x:23,y:9,to:"route3",tx:0,ty:8}],
+signs:[{x:9,y:5,t:"PEWTER CITY: stone-gray town. GYM ahead!"}],
+npcs:[{x:14,y:8,s:"old",d:["BROCK uses ROCK types. WATER and GRASS win! ELECTRIC can't touch GROUND!"]}],
+trainers:[{x:16,y:8,n:"HIKER",team:[["geodude",8],["diglett",7]],reward:260,sight:3,dir:"left",msg:"Feel the power of STONE!"}]},
+gym1:{name:"PEWTER GYM",rows:rows(["HHHHHHHHHH","H...YY...H","H...YY...H","H...YY...H","H...YY...H","H...PP...H","HHHH..HHHH"]),warps:[{x:4,y:6,to:"pewter",tx:5,ty:4},{x:5,y:6,to:"pewter",tx:5,ty:4}],npcs:[],trainers:[{x:4,y:1,n:"LEADER BROCK",gym:"boulder",team:[["geodude",10],["onix",12]],reward:1200,sight:9,dir:"down",msg:"I am BROCK! My rock-hard will crush you!"}]},
+route3:{name:"ROUTE 3",rows:rows([
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTtttttTTTTTTTTtttttTTT",
+"TTTtttttTTTTTTTTtttttTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTFFTTTTTTTTTTTTFFTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTtttttTTTTTTTTTTtttttTT",
+"PPPPPPPPPPPPPPPPPPPPPPPP",
+"TTtttttTTTTTTTTTTtttttTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTFFTTTTTTTTTTTTFFTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTtttttTTTTTTTTtttttTTT",
+"TTTtttttTTTTTTTTtttttTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT"]),
+warps:[{x:0,y:8,to:"pewter",tx:22,ty:9},{x:23,y:8,to:"cerulean",tx:1,ty:8}],
+trainers:[{x:8,y:8,n:"JR TRAINER",team:[["pidgey",9],["rattata",9]],reward:300,sight:3,dir:"down",msg:"I'm the toughest kid on ROUTE 3!"},{x:15,y:8,n:"LASS",team:[["pikachu",10]],reward:320,sight:3,dir:"up",msg:"My PIKACHU is cuter than yours!"}]},
+cerulean:{name:"CERULEAN CITY",rows:rows(["TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTHHHHHTTTTTTHHHHHHTTTT",
+"TTTHCCCHTTTTTTTHYYYHTTTT",
+"TTTHDDHTTTTPPPHYDDYHTTTT",
+"TTTHPPHTTTTPPPHYPPYHTTTT",
+"TTTPPPPPPPPPPPPPPPPTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"PPPPPPPPPPPPPtttttTTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT"]),
+warps:[{x:4,y:3,to:"center_in",tx:4,ty:5,ret:{map:"cerulean",x:4,y:4}},{x:16,y:3,to:"gym2",tx:4,ty:5},{x:0,y:8,to:"route3",tx:22,ty:8},{x:12,y:15,to:"vermilion",tx:12,ty:14}],
+signs:[{x:12,y:5,t:"CERULEAN CITY: splash capital! GYM east, DOCK south!"}],
+npcs:[{x:14,y:9,s:"girl",d:["MISTY uses WATER types. Bring ELECTRIC or GRASS!"]}],
+trainers:[{x:5,y:8,n:"RIVAL GARY",rival:1,team:[["pidgeotto",14],["rattata",13],["abra",13]],reward:700,sight:2,dir:"down",msg:"GARY: Yo! I got 2 BADGES already! Battle me!"}]},
+gym2:{name:"CERULEAN GYM",rows:rows(["HHHHHHHHHH","H...WW...H","H...WW...H","H...WW...H","H...WW...H","H...PP...H","HHHH..HHHH"]),warps:[{x:4,y:6,to:"cerulean",tx:16,ty:4},{x:5,y:6,to:"cerulean",tx:16,ty:4}],trainers:[{x:4,y:1,n:"LEADER MISTY",gym:"cascade",team:[["staryu",13],["starmie",16]],reward:1600,sight:9,dir:"down",msg:"I'm MISTY! My WATER team will drown you!"}]},
+vermilion:{name:"VERMILION DOCK",rows:rows([
+"TTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTWWWWWWWWPPPWWWWWWWTTT",
+"TTTTHHHHHTTTTTTTTTTTTTT",
+"TTTTHHHHHTTTTTTTTTTTTTT",
+"TTTTHHDDHTTPPPTTTTTTTTTT",
+"TTTTHHPPHTTPPPTTTTTTTTTT",
+"TTTPPPPPPPPPPPPPPPPTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTFFTTTTTPPPTTTTFFTTTTT",
+"TTTTtttttttPPPtttttttTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTWWTTTTTTPPPTTTTWWTTTT",
+"TTTTTTTTTTTPPPTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT"]),
+warps:[{x:6,y:4,to:"gym3",tx:4,ty:5}],
+signs:[{x:12,y:6,t:"VERMILION DOCK: final gym. Beat SURGE then touch the GOLD STATUE!"}],
+npcs:[{x:14,y:7,s:"statue",solid:1,d:[":champion"]}],
+trainers:[{x:16,y:9,n:"SAILOR",team:[["machop",15],["pikachu",14]],reward:500,sight:3,dir:"left",msg:"Anchors aweigh, landlubber!"}]},
+gym3:{name:"VERMILION GYM",rows:rows(["HHHHHHHHHH","H........H","H..E..E..H","H........H","H...PP...H","H........H","HHHH..HHHH"]),warps:[{x:4,y:6,to:"vermilion",tx:6,ty:5},{x:5,y:6,to:"vermilion",tx:6,ty:5}],trainers:[{x:4,y:1,n:"LEADER SURGE",gym:"thunder",team:[["pikachu",16],["raichu",19]],reward:2000,sight:9,dir:"down",msg:"I'm LT. SURGE! My ELECTRICs never miss, baby!"}]}};
+const WILD={
+route1:[["pidgey",2,4,40],["rattata",2,4,40],["caterpie",3,4,10],["weedle",3,4,10]],
+forest:[["caterpie",4,6,25],["weedle",4,6,25],["pikachu",3,5,12],["metapod",5,6,14],["kakuna",5,6,14],["butterfree",7,7,4]],
+route3:[["pidgey",7,10,25],["rattata",7,10,20],["abra",8,9,10],["geodude",8,10,20],["machop",9,10,8],["diglett",8,10,12]],
+cerulean:[["staryu",10,13,20],["pidgeotto",10,12,20],["abra",10,12,15],["gastly",11,13,10]],
+vermilion:[["gastly",13,16,20],["machop",13,15,20],["staryu",13,15,20],["diglett",13,15,15]],
+pallet:[["pidgey",2,3,50],["rattata",2,3,50]],viridian:[["pidgey",2,4,50],["rattata",2,4,50]],pewter:[["geodude",5,7,30],["rattata",4,6,40],["pidgey",4,6,30]]};
+/* ============ STATE ============ */
+let state="title",sub=null,menuIdx=0,dlgLines=[],dlgCb=null,dlgChar=0,dlgTimer=0,partyTab=0,dexTab=0,shopIdx=0,battle=null,textFast=false;
+let G=null;
+function mkMon(sp,lvl){const S=SPECIES[sp];const maxhp=Math.floor(S.hp*2*lvl/100)+lvl+10;const atk=Math.floor(S.atk*2*lvl/100)+5,def=Math.floor(S.def*2*lvl/100)+5,spd=Math.floor(S.spd*2*lvl/100)+5;let ms=[];for(const[lv,m]of(S.moves||[]))if(lv<=lvl&&!ms.includes(m))ms.push(m);ms=ms.slice(-4);if(!ms.length)ms=["tackle"];return{sp,lvl,xp:lvl*lvl*lvl,hp:maxhp,maxhp,atk,def,spd,moves:ms};}
+function newGame(){G={map:"pallet",px:11,py:7,dir:"down",party:[],dexSeen:{},dexCaught:{},badges:[],money:3000,bag:{ball:5,potion:3},flags:{},rivalPick:null};save();}
+function save(){try{localStorage.setItem("pocketYellowSave",JSON.stringify(G));}catch(e){}}
+function load(){try{const s=localStorage.getItem("pocketYellowSave");if(!s)return false;const g=JSON.parse(s);if(!g||!g.party)return false;G=g;return true;}catch(e){return false;}}
+function hasStarter(){return G.party.length>0;}
+function healParty(){for(const m of G.party){m.hp=m.maxhp;}sfx.heal();}
+function dexCount(){return[Object.keys(G.dexSeen).length,Object.keys(G.dexCaught).length];}
+function refreshHud(){const[a,b]=dexCount();$("hBadges").textContent="🎖 "+G.badges.length+"/3";$("hDex").textContent="📕 "+a+" seen / "+b+" caught";$("hMoney").textContent="💰 ¥"+G.money;$("hLoc").textContent=(MAPS[G.map]||{}).name||G.map;}
+/* ============ INPUT ============ */
+const keys={};let pressed={};
+addEventListener("keydown",e=>{audio();startMusic();const k=e.key.toLowerCase();if(["arrowup","arrowdown","arrowleft","arrowright"," ","tab"].includes(k===" "? " ":k)||[" ","tab"].includes(e.key))e.preventDefault();if(e.repeat)return;keys[k]=true;const m={arrowup:"up",w:"up",arrowdown:"down",s:"down",arrowleft:"left",a:"left",arrowright:"right",d:"right",z:"a",enter:"a"," ":"a",x:"b",escape:"b",e:"start",m:"start",q:"select",tab:"select"};if(m[k]||m[e.key.toLowerCase()])pressed[m[k]||m[e.key.toLowerCase()]]=true;if(k==="f")document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});if(k==="n"&&state!=="hall"){muted=!muted;say((muted?"Sound OFF.":"Sound ON."));}});
+addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
+document.querySelectorAll(".tbtn").forEach(b=>{const k=b.dataset.k;const dn=e=>{e.preventDefault();audio();pressed[k]=true;keys[k]=true;};const up=()=>{keys[k]=false;};b.addEventListener("pointerdown",dn);b.addEventListener("pointerup",up);b.addEventListener("pointerleave",up);});
+let padPrev={},padRepeat={};
+function pollPad(){let gp=null;try{const ps=navigator.getGamepads?navigator.getGamepads():[];for(const p of ps)if(p&&p.connected){gp=p;break;}}catch(e){}$("hPad").textContent=gp?("pad: "+gp.id.slice(0,22)):"no gamepad";$("padDot").style.background=gp?"#3ddad7":"#555";if(!gp)return;const b=i=>!!(gp.buttons[i]&&gp.buttons[i].pressed);const ax=gp.axes[0]||0,ay=gp.axes[1]||0;const now=performance.now();function edge(name,down){const was=padPrev[name];padPrev[name]=down;if(down&&!was){pressed[name]=true;padRepeat[name]=now+350;}else if(down&&now>(padRepeat[name]||0)&&["up","down","left","right"].includes(name)){pressed[name]=true;padRepeat[name]=now+140;}}
+edge("a",b(0));edge("b",b(1));edge("start",b(9));edge("select",b(8));edge("run",b(3)||b(5));const dz=0.45;edge("up",b(12)||ay<-dz);edge("down",b(13)||ay>dz);edge("left",b(14)||ax<-dz);edge("right",b(15)||ax>dz);}
+function held(dir){if(keys[dir])return true;if(dir==="up"&&(keys["arrowup"]||keys["w"]))return true;if(dir==="down"&&(keys["arrowdown"]||keys["s"]))return true;if(dir==="left"&&(keys["arrowleft"]||keys["a"]))return true;if(dir==="right"&&(keys["arrowright"]||keys["d"]))return true;return false;}
+function consume(){const p=pressed;pressed={};return p;}
+/* ============ DIALOG ============ */
+function say(lines,cb){dlgLines=Array.isArray(lines)?lines:[lines];dlgCb=cb||null;dlgChar=0;sub="dialog";}
+/* ============ MAP HELPERS ============ */
+function tileAt(map,x,y){const M=MAPS[map];if(!M)return"T";if(y<0||y>=M.rows.length||x<0||x>=M.rows[0].length)return"T";return M.rows[y][x];}
+const SOLID=new Set(["T","H","W","C","M","B","Y","E","O","G","S"]);
+function solidAt(map,x,y){const t=tileAt(map,x,y);if(SOLID.has(t))return true;const M=MAPS[map];for(const n of(M.npcs||[]))if(n.x===x&&n.y===y&&(n.solid||["oak","joy","mart","mom","statue","ball"].includes(n.s)))return true;for(const tr of(M.trainers||[]))if(!tr.beaten&&tr.x===x&&tr.y===y)return true;return false;}
+function warpAt(map,x,y){return(MAPS[map].warps||[]).find(w=>w.x===x&&w.y===y);}
+function npcAt(map,x,y){return(MAPS[map].npcs||[]).find(n=>n.x===x&&n.y===y);}
+function trainerAt(map,x,y){return(MAPS[map].trainers||[]).find(t=>!t.beaten&&t.x===x&&t.y===y);}
+function facingTile(){let x=G.px,y=G.py;if(G.dir==="up")y--;if(G.dir==="down")y++;if(G.dir==="left")x--;if(G.dir==="right")x++;return{x,y};}
+/* ============ BATTLE ============ */
+function alive(){return G.party.some(m=>m.hp>0);}
+function firstAlive(){return G.party.findIndex(m=>m.hp>0);}
+function startBattle(kind,foe,ctx2){audio();sfx.enc();G.dexSeen[foe.sp]=1;refreshHud();battle={kind,foe,foeAtk:0,foeDef:0,foeSpd:0,me:Math.max(0,firstAlive()),phase:"intro",t:0,menu:0,moveSel:0,msg:[],ballAnim:0,caught:false,escaped:false,enemy2:null};const S=SPECIES[foe.sp];battle.foe.maxhp=battle.foe.maxhp||(Math.floor(S.hp*2*foe.lvl/100)+foe.lvl+10);battle.foe.hp=battle.foe.hp!==undefined?battle.foe.hp:battle.foe.maxhp;battle.foe.xp=battle.foe.xp||0;state="battle";sub="battleIntro";battle.t=0;say(kind==="trainer"?["Trainer "+ctx2+" wants to battle!",foe.sp?("Go! "+SPECIES[foe.sp].n+"!"):""]:["Wild "+SPECIES[foe.sp].n+" appeared!","Go! "+SPECIES[G.party[battle.me].sp].n+"!"],()=>{sub=null;battle.phase="menu";});}
+function dmgCalc(att,def,mv){const M=MOVES[mv];if(!M||!M.p)return{txt:""};const S1=SPECIES[att.sp],S2=SPECIES[def.sp];const stab=M.t===S1.t1||M.t===S1.t2?1.5:1;const eff=effOf(M.t,S2.t1,S2.t2);if(Math.random()*100>M.acc)return{dmg:0,miss:true,eff};let base=((2*att.lvl/5+2)*M.p*(att.atk/Math.max(1,def.def)))/50+2;base*=stab*eff*rnd(0.85,1);return{dmg:Math.max(1,Math.floor(base)),eff};}
+function applyFx(user,target,mv){const M=MOVES[mv];if(!M||!M.fx)return"";const f=M.fx;if(f==="atk-"){target.atkStage=(target.atkStage||0)-1;return" foe ATK fell!";}if(f==="def-"){target.defStage=(target.defStage||0)-1;return" foe DEF fell!";}if(f==="def+"){user.defStage=(user.defStage||0)+1;return" DEF rose!";}if(f==="spd-"){return" foe slowed!";}if(f==="heal"){user.hp=Math.min(user.maxhp,user.hp+Math.floor(user.maxhp/2));return" recovered HP!";}if(f==="par"){if(Math.random()<0.6){target.par=true;return" foe PARALYZED!";}return" but it failed!";}return"";}
+function statMul(s){return Math.max(0.5,1+(s||0)*0.25);}
+function gainXp(mon,amount){mon.xp+=amount;let ups=[];while(mon.lvl<100&&mon.xp>=Math.pow(mon.lvl+1,3)){mon.lvl++;const S=SPECIES[mon.sp];mon.maxhp=Math.floor(S.hp*2*mon.lvl/100)+mon.lvl+10;mon.atk=Math.floor(S.atk*2*mon.lvl/100)+5;mon.def=Math.floor(S.def*2*mon.lvl/100)+5;mon.spd=Math.floor(S.spd*2*mon.lvl/100)+5;mon.hp=Math.min(mon.maxhp,mon.hp+8);for(const[lv,mv]of(S.moves||[]))if(lv===mon.lvl&&!mon.moves.includes(mv)){if(mon.moves.length>=4)mon.moves.shift();mon.moves.push(mv);ups.push("Learned "+MOVES[mv].n+"!");}ups.push("Lv "+mon.lvl+"!");const evo=S.evo;if(evo&&mon.lvl>=evo.lv){mon.sp=evo.to;const S2=SPECIES[mon.sp];G.dexSeen[mon.sp]=1;G.dexCaught[mon.sp]=1;ups.push("Evolved into "+S2.n+"!");sfx.fanfare();mon.maxhp=Math.floor(S2.hp*2*mon.lvl/100)+mon.lvl+10;mon.atk=Math.floor(S2.atk*2*mon.lvl/100)+5;mon.def=Math.floor(S2.def*2*mon.lvl/100)+5;mon.spd=Math.floor(S2.spd*2*mon.lvl/100)+5;mon.hp=mon.maxhp;}}return ups;}
+function trainerReward(){return battle&&battle.kind==="trainer"?battle.reward||200:0;}
+/* ============ RENDER TILE ============ */
+function drawTile(c,x,y,t,frame){const px=x*32,py=y*32;let g="grass";
+function base(col1,col2){c.fillStyle=col1;c.fillRect(px,py,32,32);c.fillStyle=col2;for(let i=0;i<6;i++){c.fillRect(px+((i*13+frame*2)%28),py+((i*7)%28),3,3);}}
+if(t===" "||t==="P"){c.fillStyle="#e8d8a8";c.fillRect(px,py,32,32);c.fillStyle="#d8c898";c.fillRect(px,py+14,32,4);}
+else if(t==="G"){base("#6fbf4a","#5da83e");}
+else if(t==="F"){base("#6fbf4a","#5da83e");c.fillStyle="#fff";c.fillRect(px+6,py+6,4,4);c.fillStyle="#ff6b9d";c.fillRect(px+20,py+14,4,4);c.fillStyle="#ffd23f";c.fillRect(px+12,py+20,4,4);}
+else if(t==="t"){base("#4e9e3a","#3e8e2e");c.fillStyle="#2e6e22";const o=Math.sin(frame/8+x)*2;c.fillRect(px+4+o,py+2,4,18);c.fillRect(px+14-o,py+6,4,16);c.fillRect(px+23+o,py+4,4,18);}
+else if(t==="T"){base("#5da83e","#4e9434");c.fillStyle="#5a3a1e";c.fillRect(px+12,py+20,8,12);c.fillStyle="#2e7e26";c.beginPath();c.moveTo(px+16,py);c.lineTo(px+2,py+22);c.lineTo(px+30,py+22);c.fill();c.fillStyle="#3e9e36";c.beginPath();c.moveTo(px+16,py+4);c.lineTo(px+8,py+18);c.lineTo(px+24,py+18);c.fill();}
+else if(t==="W"){c.fillStyle="#4ea3d8";c.fillRect(px,py,32,32);c.fillStyle="#7ec8e8";c.fillRect(px+((frame*2+x*5)%24),py+6,10,3);c.fillRect(px+((frame+x*9)%24),py+20,10,3);}
+else if(t==="H"){c.fillStyle="#d8b060";c.fillRect(px,py,32,32);c.fillStyle="#a87838";c.fillRect(px,py,32,4);c.fillRect(px,py,4,32);c.fillStyle="#8a5a28";c.fillRect(px+12,py+12,8,8);}
+else if(t==="D"){c.fillStyle="#5a3a1e";c.fillRect(px,py,32,32);c.fillStyle="#2a1a0e";c.fillRect(px+8,py+2,16,30);}
+else if(t==="C"){c.fillStyle="#e84848";c.fillRect(px,py,32,32);c.fillStyle="#fff";c.fillRect(px+4,py+12,24,8);}
+else if(t==="M"){c.fillStyle="#3c78d8";c.fillRect(px,py,32,32);c.fillStyle="#fff";c.fillRect(px+4,py+12,24,8);}
+else if(t==="B"){c.fillStyle="#8a6a3a";c.fillRect(px,py,32,32);c.fillStyle="#f4f1de";c.fillRect(px+6,py+6,20,20);c.fillStyle="#e84848";c.fillRect(px+12,py+12,8,8);}
+else if(t==="Y"){c.fillStyle="#d8c898";c.fillRect(px,py,32,32);c.fillStyle="#a87838";c.fillRect(px,py,32,3);c.fillStyle="#e84848";c.beginPath();c.arc(px+16,py+16,8,0,7);c.fill();}
+else if(t==="G"||t==="R"){c.fillStyle="#989898";c.fillRect(px,py,32,32);c.fillStyle="#787878";c.fillRect(px+4,py+4,10,10);c.fillRect(px+18,py+16,10,10);}
+else if(t==="E"){c.fillStyle="#3c3c5c";c.fillRect(px,py,32,32);c.fillStyle="#ffd23f";c.fillRect(px+4,py+14,24,4);}
+else if(t==="."){c.fillStyle="#e8d8b0";c.fillRect(px,py,32,32);c.fillStyle="#d0b890";c.fillRect(px,py+30,32,2);}
+else{base("#6fbf4a","#5da83e");}
+if(t==="D"){c.fillStyle="#ffd23f";c.fillRect(px,py,32,3);}}
+/* ============ SPRITES ============ */
+function drawPerson(c,px,py,kind,frame,dir){c.save();c.translate(px,py);
+c.fillStyle="rgba(0,0,0,.25)";c.beginPath();c.ellipse(0,13,10,4,0,0,7);c.fill();
+const bob=(frame%40<20)?-1:0;c.translate(0,bob);
+if(kind==="hero"){c.fillStyle="#2a2a4a";c.fillRect(-7,-2,14,14);c.fillStyle="#ffd23f";c.fillRect(-7,8,14,3);c.fillStyle="#ffcc99";c.fillRect(-6,-12,12,11);c.fillStyle="#ffd23f";c.fillRect(-8,-16,16,6);c.fillStyle="#e84848";c.fillRect(-8,-16,16,2);c.fillStyle="#222";c.fillRect(-4,-8,3,3);c.fillRect(2,-8,3,3);}
+else if(kind==="oak"){c.fillStyle="#f4f1de";c.fillRect(-8,-2,16,15);c.fillStyle="#ffcc99";c.fillRect(-6,-13,12,11);c.fillStyle="#888";c.fillRect(-6,-15,12,4);}
+else if(kind==="joy"){c.fillStyle="#ff8a9d";c.fillRect(-7,-2,14,14);c.fillStyle="#ffcc99";c.fillRect(-6,-12,12,10);c.fillStyle="#e84848";c.fillRect(-5,-14,10,4);}
+else if(kind==="mart"){c.fillStyle="#3c78d8";c.fillRect(-7,-2,14,14);c.fillStyle="#ffcc99";c.fillRect(-6,-12,12,10);c.fillStyle="#222";c.fillRect(-7,-14,14,3);}
+else if(kind==="mom"){c.fillStyle="#e878a8";c.fillRect(-7,-2,14,14);c.fillStyle="#ffcc99";c.fillRect(-6,-12,12,10);c.fillStyle="#7a3a5a";c.fillRect(-7,-15,14,5);}
+else if(kind==="ball"){c.fillStyle="#f4f1de";c.beginPath();c.arc(0,4,7,0,7);c.fill();c.fillStyle="#e84848";c.beginPath();c.arc(0,4,7,Math.PI,0);c.fill();c.fillStyle="#222";c.fillRect(-7,3,14,2);}
+else if(kind==="statue"){c.fillStyle="#ffd23f";c.fillRect(-6,-14,12,26);c.fillStyle="#a87800";c.fillRect(-6,8,12,5);}
+else{c.fillStyle=kind==="girl"?"#ff8a9d":kind==="old"?"#98a8b8":"#48a848";c.fillRect(-7,-2,14,14);c.fillStyle="#ffcc99";c.fillRect(-6,-12,12,10);c.fillStyle="#3a2a1a";c.fillRect(-6,-15,12,4);}
+if(dir==="left"){c.fillStyle="rgba(0,0,0,.2)";c.fillRect(-9,-4,3,10);}if(dir==="right"){c.fillStyle="rgba(0,0,0,.2)";c.fillRect(6,-4,3,10);}
+c.restore();}
+function drawMon(c,px,py,size,sp,frame,back){const S=SPECIES[sp];if(!S)return;const s=size/64;c.save();c.translate(px,py);c.scale(s,s);
+c.fillStyle="rgba(0,0,0,.22)";c.beginPath();c.ellipse(0,26,22,6,0,0,7);c.fill();
+const bob=Math.sin((frame||0)/12)*2;c.translate(0,bob);
+c.fillStyle=S.c;c.strokeStyle="rgba(0,0,0,.45)";c.lineWidth=2;
+c.beginPath();c.ellipse(0,4,20,17,0,0,7);c.fill();c.stroke();
+if(S.shape==="mouse"){c.fillStyle=S.c;c.beginPath();c.moveTo(-14,-8);c.lineTo(-20,-30);c.lineTo(-8,-14);c.fill();c.stroke();c.beginPath();c.moveTo(14,-8);c.lineTo(20,-30);c.lineTo(8,-14);c.fill();c.stroke();c.fillStyle="#e84848";c.beginPath();c.arc(-16,6,5,0,7);c.fill();c.beginPath();c.arc(16,6,5,0,7);c.fill();c.strokeStyle="#7a5a00";c.lineWidth=3;c.beginPath();c.moveTo(18,10);c.quadraticCurveTo(30,0,26,-16);c.stroke();}
+else if(S.shape==="lizard"||S.shape==="dragon"){c.fillStyle="#e8f4ff";c.beginPath();c.moveTo(-6,-12);c.lineTo(-2,-20);c.lineTo(2,-12);c.fill();c.fillStyle="#ff6a00";c.beginPath();c.arc(20,16,6+Math.sin((frame||0)/6)*1.5,0,7);c.fill();if(S.shape==="dragon"){c.fillStyle=S.c;c.beginPath();c.moveTo(-18,0);c.lineTo(-30,-10);c.lineTo(-26,8);c.fill();c.stroke();c.beginPath();c.moveTo(18,0);c.lineTo(30,-10);c.lineTo(26,8);c.fill();c.stroke();}}
+else if(S.shape==="turtle"){c.fillStyle="#f4f1de";c.beginPath();c.ellipse(0,10,14,10,0,0,7);c.fill();c.stroke();c.fillStyle="#3a6a8a";c.fillRect(-14,-2,28,5);}
+else if(S.shape==="bulb"){c.fillStyle="#2e7e26";c.beginPath();c.ellipse(0,-14,10,8,0,0,7);c.fill();c.stroke();}
+else if(S.shape==="bird"||S.shape==="butterfly"){c.fillStyle="rgba(255,255,255,.9)";const w=Math.sin((frame||0)/5)*6;c.beginPath();c.ellipse(-20,0,12,5,-0.4+w/40,0,7);c.fill();c.stroke();c.beginPath();c.ellipse(20,0,12,5,0.4-w/40,0,7);c.fill();c.stroke();if(S.shape==="butterfly"){c.fillStyle="#e84848";c.beginPath();c.arc(-8,-4,3,0,7);c.fill();c.beginPath();c.arc(8,-4,3,0,7);c.fill();}}
+else if(S.shape==="bug"){c.strokeStyle="#2e5e1e";c.lineWidth=2;for(let i=-1;i<=1;i++){c.beginPath();c.moveTo(i*10,14);c.lineTo(i*12,24);c.stroke();}}
+else if(S.shape==="cocoon"){c.strokeStyle="rgba(0,0,0,.3)";for(let i=-1;i<=1;i++){c.beginPath();c.moveTo(-14,i*7+4);c.lineTo(14,i*7+4);c.stroke();}}
+else if(S.shape==="bee"){c.strokeStyle="rgba(0,0,0,.5)";c.beginPath();c.moveTo(-12,4);c.lineTo(12,4);c.stroke();c.fillStyle="rgba(200,230,255,.9)";c.beginPath();c.ellipse(-10,-12,8,5,-0.5,0,7);c.fill();c.beginPath();c.ellipse(10,-12,8,5,0.5,0,7);c.fill();}
+else if(S.shape==="rock"){c.fillStyle="rgba(0,0,0,.25)";c.beginPath();c.arc(-6,0,6,0,7);c.fill();c.beginPath();c.arc(8,-4,5,0,7);c.fill();}
+else if(S.shape==="snake"){c.fillStyle=S.c;for(let i=1;i<4;i++){c.beginPath();c.arc(-i*10,14-i*3,10-i,0,7);c.fill();c.stroke();}}
+else if(S.shape==="ghost"){c.fillStyle="rgba(255,255,255,.25)";c.beginPath();c.ellipse(0,-2,22,20,0,0,7);c.fill();}
+else if(S.shape==="star"){c.fillStyle=S.c;c.save();c.rotate((frame||0)/30);for(let i=0;i<5;i++){c.rotate(Math.PI*2/5);c.beginPath();c.moveTo(0,0);c.lineTo(-6,-8);c.lineTo(0,-26);c.lineTo(6,-8);c.fill();c.stroke();}c.restore();c.fillStyle="#e84848";c.beginPath();c.arc(0,2,6,0,7);c.fill();}
+else if(S.shape==="mole"){c.fillStyle="#7a4a2a";c.fillRect(-16,16,32,10);c.fillStyle="#ff8a9d";c.beginPath();c.arc(0,2,4,0,7);c.fill();}
+else if(S.shape==="fox"){c.fillStyle=S.c;c.beginPath();c.moveTo(-14,-8);c.lineTo(-16,-24);c.lineTo(-4,-12);c.fill();c.stroke();c.beginPath();c.moveTo(14,-8);c.lineTo(16,-24);c.lineTo(4,-12);c.fill();c.stroke();}
+else if(S.shape==="muscle"){c.strokeStyle="rgba(0,0,0,.4)";c.lineWidth=5;c.beginPath();c.moveTo(-20,6);c.lineTo(-28,14);c.stroke();c.beginPath();c.moveTo(20,6);c.lineTo(28,14);c.stroke();}
+else if(S.shape==="rat"){c.strokeStyle=S.c;c.lineWidth=4;c.beginPath();c.moveTo(16,10);c.quadraticCurveTo(30,14,28,0);c.stroke();c.fillStyle="#fff";c.beginPath();c.moveTo(10,-10);c.lineTo(16,-22);c.lineTo(18,-8);c.fill();c.stroke();}
+c.fillStyle="#fff";c.beginPath();c.arc(-7,-2,5.5,0,7);c.fill();c.beginPath();c.arc(7,-2,5.5,0,7);c.fill();
+c.fillStyle="#181828";const lk=back?1:0;c.beginPath();c.arc(-7+lk*2,-2,2.6,0,7);c.fill();c.beginPath();c.arc(7+lk*2,-2,2.6,0,7);c.fill();
+c.fillStyle="rgba(0,0,0,.5)";c.fillRect(-4,8,8,2);
+c.restore();}
+/* ============ OVERWORLD UPDATE ============ */
+let mvx=0,mvy=0,moving=false,frame=0,encFlash=0;
+function tryStep(inp){if(moving||sub)return;let dx=0,dy=0,d=G.dir;if(inp.up||held("up")){dy=-1;d="up";}else if(inp.down||held("down")){dy=1;d="down";}else if(inp.left||held("left")){dx=-1;d="left";}else if(inp.right||held("right")){dx=1;d="right";}else return;G.dir=d;const nx=G.px+dx,ny=G.py+dy;if(solidAt(G.map,nx,ny)){sfx.bump();return;}G.px=nx;G.py=ny;moving=true;mvx=dx*32;mvy=dy*32;sfx.move();const w=warpAt(G.map,nx,ny);if(w){setTimeout(()=>{let to=w.to,tx=w.tx,ty=w.ty;if(w.back){const r=G.flags.ret||{map:to,x:tx,y:ty};to=r.map;tx=r.x;ty=r.y;}if(w.ret)G.flags.ret=w.ret;G.map=to;G.px=tx;G.py=ty;save();refreshHud();moving=false;mvx=mvy=0;},130);return;}
+if(tileAt(G.map,nx,ny)==="t"&&hasStarter()){const table=WILD[G.map];if(table&&Math.random()<0.13){setTimeout(()=>{if(!moving)return;const[sp,mn,mx]=weightedWild(table);const lvl=ri(mn,mx);startBattle("wild",mkMon(sp,lvl));moving=false;mvx=mvy=0;},160);return;}}
+checkTrainerSight();setTimeout(()=>{moving=false;mvx=mvy=0;},130);}
+function weightedWild(t){const tot=t.reduce((a,e)=>a+e[3],0);let r=Math.random()*tot;for(const e of t){r-=e[3];if(r<=0)return e;}return t[0];}
+function checkTrainerSight(){const M=MAPS[G.map];for(const tr of(M.trainers||[])){if(tr.beaten)continue;const dx=G.px-tr.x,dy=G.py-tr.y;let seen=false;if(tr.dir==="down"&&dx===0&&dy>0&&dy<=tr.sight)seen=true;if(tr.dir==="up"&&dx===0&&dy<0&&-dy<=tr.sight)seen=true;if(tr.dir==="left"&&dy===0&&dx<0&&-dx<=tr.sight)seen=true;if(tr.dir==="right"&&dy===0&&dx>0&&dx<=tr.sight)seen=true;if(seen){startTrainerBattle(tr);return;}}}
+function startTrainerBattle(tr){const team=tr.team.map(([sp,lv])=>mkMon(sp,lv));battle={kind:"trainer",trainer:tr,team,ti:0,reward:tr.reward,gym:tr.gym,rival:tr.rival,menu:0,moveSel:0};const foe=team[0];foe.hp=foe.maxhp;G.dexSeen[foe.sp]=1;sfx.enc();battleCtx={};state="battle";battle.me=Math.max(0,firstAlive());battle.phase="intro";say([tr.n+" wants to battle!",tr.msg||"", "Go! "+SPECIES[G.party[battle.me].sp].n+"!"],()=>{sub=null;battle.phase="menu";battle.menu=0;});battle.foe=foe;}
+let battleCtx={};
+function interact(){const{x,y}=facingTile();const M=MAPS[G.map];const s=(M.signs||[]).find(s=>s.x===x&&s.y===y);if(s){sfx.confirm();say(s.t);return;}const n=npcAt(G.map,x,y)||npcAt(G.map,G.px,G.py);if(n){sfx.confirm();if(!n.d||!n.d.length){say("...");return;}if(n.d.some(l=>l[0]===":"&&l!==":shop"&&l!==":starter"&&l!==":champion")){const lines=n.d.filter(l=>l[0]!==":");const cmds=n.d.filter(l=>l[0]===":");say(lines.length?lines:["..."],()=>{for(const c of cmds)if(c===":heal"){healParty();save();refreshHud();}if(cmds.includes(":heal")){sfx.heal();say("All better! HP fully restored!");}});}else if(n.d[0]===":shop"){sub="shop";shopIdx=0;sfx.confirm();}else if(n.d[0]===":starter"){if(hasStarter()){say("OAK: Your journey continues! Earn 3 BADGES!");}else{sub="starter";menuIdx=0;sfx.confirm();}}else if(n.d[0]===":champion"){championCheck();}else say(n.d);return;}const tr=trainerAt(G.map,x,y);if(tr){startTrainerBattle(tr);return;}}
+function championCheck(){if(G.badges.length<3){say(["A GOLD STATUE hums with power...","It reads: 'Only a trainer with 3 BADGES may challenge the CHAMPION.'","You have "+G.badges.length+"/3."]);return;}if(G.flags.champ){say("STATUE: You are already the CHAMPION!");return;}say(["The statue glows! RIVAL GARY appears!","GARY: So... you got 3 BADGES? Not bad. But I'M the champ!"],()=>{const team=[mkMon("pidgeotto",20),mkMon("raticate",19),mkMon("starmie",20),mkMon("charizard",22)];battle={kind:"champ",trainer:{n:"CHAMPION GARY",reward:3000},team,ti:0,reward:3000,menu:0,moveSel:0};battle.foe=team[0];G.dexSeen[team[0].sp]=1;state="battle";battle.me=Math.max(0,firstAlive());battle.phase="menu";say(["CHAMPION GARY wants to battle!","Go! "+SPECIES[G.party[battle.me].sp].n+"!"],()=>{sub=null;});});}
+/* ============ BATTLE FLOW ============ */
+function battleMenuInput(inp){const B=battle;if(!B)return;if(sub==="dialog"){advanceDialog(inp);return;}if(B.phase==="menu"){if(inp.up)B.menu=(B.menu+3)%4;if(inp.down)B.menu=(B.menu+1)%4;if(inp.left)B.menu=(B.menu+3)%4;if(inp.right)B.menu=(B.menu+1)%4;if(inp.a||inp.start){sfx.confirm();if(B.menu===0){B.phase="moves";B.moveSel=0;}else if(B.menu===1){if(B.kind!=="wild"){say("Can't switch in a trainer link... yet! Using BAG instead.");}sub="bag";}else if(B.menu===2){sub="party";partyTab=B.me;}else if(B.menu===3){tryRun();}}return;}if(B.phase==="moves"){const ms=G.party[B.me].moves;if(inp.up||inp.left)B.moveSel=(B.moveSel+ms.length-1)%ms.length;if(inp.down||inp.right)B.moveSel=(B.moveSel+1)%ms.length;if(inp.b){B.phase="menu";sfx.cancel();}if(inp.a){playerAttack(B.moveSel);}return;}}
+function foeMon(){return battle.foe;}
+function playerAttack(mi){const B=battle,me=G.party[B.me],foe=foeMon();const mv=me.moves[mi];if(!mv){return;}B.phase="anim";const first=(me.spd+(me.par?0:0))>=(foe.spd||50);const seq=first?["me","foe"]:["foe","me"];doRound(seq,0,mv);}
+function foePickMove(foe){const S=SPECIES[foe.sp];let pool=[];for(const[lv,m]of(S.moves||[]))if(lv<=foe.lvl)pool.push(m);if(!pool.length)pool=["tackle"];return choice(pool.slice(-4));}
+function doRound(seq,i,myMv){const B=battle;if(B.phase==="over")return;if(i>=seq.length){if(!B.foe||B.foe.hp<=0){foeDown();}else if(G.party[B.me].hp<=0){meDown();}else{B.phase="menu";}return;}
+const who=seq[i];if(who==="me"){const me=G.party[B.me];if(me.hp<=0){doRound(seq,i+1,myMv);return;}if(me.par&&Math.random()<0.25){say(SPECIES[me.sp].n+" is paralyzed! It can't move!",()=>doRound(seq,i+1,myMv));return;}const M=MOVES[myMv];say(SPECIES[me.sp].n+" used "+M.n+"!",()=>{if(M.p===0){const t=applyFx(me,B.foe,myMv);sfx.confirm();say(t||"Nothing happened.",()=>doRound(seq,i+1,myMv));}else{const r=dmgCalc(withStage(me),withStage(B.foe),myMv);B.hitT=8;if(r.miss){sfx.flee();say("But it MISSED!",()=>doRound(seq,i+1,myMv));}else{B.foe.hp=Math.max(0,B.foe.hp-r.dmg);if(r.eff>1){sfx.super_();say("Super effective! (-"+r.dmg+")",()=>doRound(seq,i+1,myMv));}else if(r.eff<1&&r.eff>0){sfx.hit();say("Not very effective... (-"+r.dmg+")",()=>doRound(seq,i+1,myMv));}else if(r.eff===0){say("It doesn't affect foe...",()=>doRound(seq,i+1,myMv));}else{sfx.hit();say("Hit! (-"+r.dmg+")",()=>doRound(seq,i+1,myMv));}}}});}else{const foe=B.foe;if(foe.hp<=0){doRound(seq,i+1,myMv);return;}if(foe.par&&Math.random()<0.25){say(SPECIES[foe.sp].n+" is paralyzed!",()=>doRound(seq,i+1,myMv));return;}const fm=foePickMove(foe);const M=MOVES[fm];const me=G.party[B.me];say("Foe "+SPECIES[foe.sp].n+" used "+M.n+"!",()=>{if(M.p===0){const t=applyFx(foe,me,fm);say("Your team"+t,()=>doRound(seq,i+1,myMv));}else{const r=dmgCalc(withStage(foe),withStage(me),fm);B.hitM=8;if(r.miss){say("It MISSED!",()=>doRound(seq,i+1,myMv));}else{me.hp=Math.max(0,me.hp-r.dmg);sfx.hit();say("Your "+SPECIES[me.sp].n+" took "+r.dmg+"!",()=>doRound(seq,i+1,myMv));}}});}}
+function withStage(m){const a={...m};a.atk=Math.floor(m.atk*statMul(m.atkStage));a.def=Math.floor(Math.max(1,m.def)*statMul(m.defStage));return a;}
+function foeDown(){const B=battle,foe=B.foe,me=G.party[B.me];sfx.faint();const S=SPECIES[foe.sp];G.dexSeen[foe.sp]=1;const xpGain=Math.floor((S.xp*foe.lvl)/7)+4;const ups=gainXp(me,xpGain);G.money+=0;save();refreshHud();let lines=["Foe "+S.n+" fainted!","+ "+xpGain+" XP to "+SPECIES[me.sp].n+"!",...ups];if(B.kind==="wild"){say(lines,()=>{endBattle(true);});}else{const T=B.team;B.ti++;if(B.ti>=T.length){lines.push("You beat "+B.trainer.n+"!","Got ¥"+B.reward+"!");G.money+=B.reward;if(B.trainer.gym&&!G.badges.includes(B.trainer.gym)){G.badges.push(B.trainer.gym);lines.push("Earned the "+B.trainer.gym.toUpperCase()+" BADGE!");sfx.fanfare();}if(B.trainer)B.trainer.beaten=true;if(B.kind==="champ"){G.flags.champ=true;}save();refreshHud();say(lines,()=>{endBattle(true,lines);});}else{B.foe=T[B.ti];B.foe.hp=B.foe.maxhp;G.dexSeen[B.foe.sp]=1;say([...lines,"Foe sends out "+SPECIES[B.foe.sp].n+"!"],()=>{B.phase="menu";B.menu=0;});}}}
+function meDown(){const B=battle,me=G.party[B.me];sfx.faint();if(!alive()){say([SPECIES[me.sp].n+" fainted!","You have no creatures left...","You rush to the nearest CENTER!"],()=>{healParty();G.map="viridian";G.px=5;G.py=4;endBattle(false);});}else{say([SPECIES[me.sp].n+" fainted!","Choose your next friend!"],()=>{sub="party";partyTab=0;B.phase="switch";});}}
+function tryRun(){const B=battle;if(B.kind!=="wild"){say("Can't flee a trainer battle!");return;}if(Math.random()<0.75){sfx.flee();say("Got away safely!",()=>endBattle(false));}else{say("Can't escape!",()=>{const fm=foePickMove(B.foe);const M=MOVES[fm];const r=dmgCalc(withStage(B.foe),withStage(G.party[B.me]),fm);G.party[B.me].hp=Math.max(0,G.party[B.me].hp-(r.dmg||4));if(G.party[B.me].hp<=0){meDown();}else B.phase="menu";});}}
+function tryCatch(){const B=battle;if(B.kind!=="wild"){say("Can't catch a trainer's friend!");return;}if(G.bag.ball<=0){say("No POKE BALLS left! Buy more at a MART.");return;}G.bag.ball--;sfx.ball();B.ballAnim=20;say("Threw a POKE BALL...",()=>{const foe=B.foe,S=SPECIES[foe.sp];const hpF=(3*foe.maxhp-2*foe.hp)/(3*foe.maxhp);const rate=clamp((S.catch/255)*hpF*1.4,0.03,0.95);if(Math.random()<rate){sfx.catch_();G.dexSeen[foe.sp]=1;G.dexCaught[foe.sp]=1;const nm=mkMon(foe.sp,foe.lvl);nm.hp=Math.max(1,Math.floor(nm.maxhp*(foe.hp/foe.maxhp)));if(G.party.length<6){G.party.push(nm);say(["Gotcha! "+S.n+" was caught!","It joined your party!"],()=>endBattle(true));}else{say(["Gotcha! "+S.n+" was caught!","Party full — it was logged in the DEX."]);setTimeout(()=>endBattle(true),100);}}else{sfx.cancel();say("Oh no! It broke free!",()=>{B.phase="menu";});}});}
+function endBattle(win,lines){if(G.flags.champ&&battle&&battle.kind==="champ"){state="hall";sub=null;battle=null;save();sfx.fanfare();return;}state="over";sub=null;battle=null;save();refreshHud();}
+function advanceDialog(inp){if(!dlgLines.length){return;}if(dlgChar<dlgLines[0].length){if(inp.a||inp.b||inp.start){dlgChar=dlgLines[0].length;}return;}if(inp.a||inp.start||inp.b){sfx.confirm();dlgLines.shift();dlgChar=0;if(!dlgLines.length){const cb=dlgCb;sub=sub==="dialog"?null:sub;dlgCb=null;if(cb)cb();}}}
+/* ============ MENU ACTIONS ============ */
+function openMenu(i){sfx.confirm();if(i===0){sub="dex";}else if(i===1){sub="party";partyTab=0;}else if(i===2){sub="bag";}else if(i===3){save();say("Progress saved!");}else if(i===4){sub="help2";}else if(i===5){muted=!muted;say(muted?"Sound OFF.":"Sound ON.");}}
+/* ============ RENDER ============ */
+function drawCenteredText(c,t,y,size,col){c.font="bold "+size+"px 'Courier New',monospace";c.textAlign="center";c.fillStyle="#000";c.fillText(t,W/2+2,y+2);c.fillStyle=col||"#fff";c.fillText(t,W/2,y);c.textAlign="left";}
+function render(inp){frame++;ctx.fillStyle="#0b0e1a";ctx.fillRect(0,0,W,H);
+if(state==="title"){drawTitle();return;}
+if(state==="hall"){drawHall();return;}
+if(state==="battle"){drawBattle();drawDialogOrMenu();return;}
+drawMap();drawHud();drawDialogOrMenu();}
+function drawTitle(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#2a3a7a");g.addColorStop(1,"#101230");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);for(let i=0;i<60;i++){ctx.fillStyle="#fff";const tw=(frame+i*7)%60<30;ctx.globalAlpha=tw?0.9:0.25;ctx.fillRect((i*97)%W,(i*61)%220+20,3,3);}ctx.globalAlpha=1;
+drawMon(ctx,W/2-180,180,110,"pikachu",frame);drawMon(ctx,W/2+180,180,110,"charizard",frame);
+ctx.font="bold 64px 'Courier New',monospace";ctx.textAlign="center";ctx.fillStyle="#000";ctx.fillText("POCKET YELLOW",W/2+4,124);ctx.fillStyle="#ffd23f";ctx.fillText("POCKET YELLOW",W/2,120);ctx.font="bold 20px 'Courier New',monospace";ctx.fillStyle="#3ddad7";ctx.fillText("★ C R E A T U R E   C O L L E C T O R ★",W/2,155);
+drawCenteredText(ctx,hasSave()?"ENTER / Ⓐ: continue · N: new game":"ENTER / Ⓐ: new game",300,20,"#fff");
+if(Math.floor(frame/30)%2===0)drawCenteredText(ctx,"— PRESS ENTER / START / TAP A —",345,22,"#ffd23f");
+ctx.font="15px 'Courier New',monospace";ctx.fillStyle="#c8c8e8";ctx.textAlign="center";ctx.fillText("Keyboard: WASD+Z/X · Gamepad: stick+D-pad, A/B, START",W/2,420);ctx.fillText("Catch 'em, badge 'em: 3 gyms → statue → legend.",W/2,445);ctx.fillText("Tall grass hides wild friends. Centers heal. Marts sell.",W/2,470);ctx.textAlign="left";}
+function hasSave(){try{return!!localStorage.getItem("pocketYellowSave")&&JSON.parse(localStorage.getItem("pocketYellowSave")).party;}catch(e){return false;}}
+function drawHall(){ctx.fillStyle="#101230";ctx.fillRect(0,0,W,H);for(let i=0;i<80;i++){ctx.fillStyle=["#ffd23f","#ff6b9d","#3ddad7"][i%3];ctx.fillRect((i*113+frame*2)%W,(i*71+frame)%H,4,4);}drawCenteredText(ctx,"★ HALL OF FAME ★",120,44,"#ffd23f");drawCenteredText(ctx,"CHAMPION! You beat GARY!",180,24,"#fff");G.party.forEach((m,i)=>{const x=140+i*120;drawMon(ctx,x,300,80,m.sp,frame+i*5);ctx.font="bold 14px monospace";ctx.textAlign="center";ctx.fillStyle="#fff";ctx.fillText(SPECIES[m.sp].n,x,360);ctx.fillText("Lv"+m.lvl,x,378);ctx.textAlign="left";});drawCenteredText(ctx,"ENTER: keep exploring · N: new journey",470,20,"#3ddad7");}
+function drawMap(){const M=MAPS[G.map];const camX=clamp(G.px-7,0,Math.max(0,M.rows[0].length-15));const camY=clamp(G.py-6,0,Math.max(0,M.rows.length-12));ctx.save();ctx.translate(20-mvx*1.6,20-mvy*1.6);
+for(let y=camY;y<camY+13;y++)for(let x=camX;x<camX+16;x++){const t=tileAt(G.map,x,y);drawTile(ctx,(x-camX),(y-camY),t,frame);}
+for(const s of(M.signs||[])){if(s.x<camX||s.x>=camX+16||s.y<camY||s.y>=camY+13)continue;ctx.fillStyle="#5a3a1e";ctx.fillRect((s.x-camX)*32+6,(s.y-camY)*32+8,20,18);ctx.fillStyle="#fff";ctx.fillRect((s.x-camX)*32+9,(s.y-camY)*32+11,14,9);}
+for(const w of(M.warps||[])){if(w.x<camX||w.x>=camX+16||w.y<camY||w.y>=camY+13)continue;}
+for(const n of(M.npcs||[])){if(n.x<camX||n.x>=camX+16||n.y<camY||n.y>=camY+13)continue;drawPerson(ctx,(n.x-camX)*32+16,(n.y-camY)*32+22,n.s,frame+G.px,G.dir);}
+for(const tr of(M.trainers||[])){if(tr.beaten)continue;if(tr.x<camX||tr.x>=camX+16||tr.y<camY||tr.y>=camY+13)continue;drawPerson(ctx,(tr.x-camX)*32+16,(tr.y-camY)*32+22,tr.gym?"gym":tr.rival?"rival":"boy",frame+G.py,tr.dir);if(tr.gym){ctx.fillStyle="#ffd23f";ctx.font="bold 10px monospace";ctx.fillText("GYM",(tr.x-camX)*32+4,(tr.y-camY)*32+2);}}
+drawPerson(ctx,(G.px-camX)*32+16-mvx*0.6,(G.py-camY)*32+22-mvy*0.6,"hero",moving?frame:10,G.dir);
+ctx.restore();}
+function drawHud(){ctx.fillStyle="rgba(10,12,26,.85)";ctx.fillRect(560,20,380,120);ctx.strokeStyle="#3c4268";ctx.lineWidth=3;ctx.strokeRect(560,20,380,120);ctx.fillStyle="#ffd23f";ctx.font="bold 15px monospace";ctx.fillText((MAPS[G.map]||{}).name||"",575,45);ctx.fillStyle="#fff";ctx.font="13px monospace";ctx.fillText("Badges: "+"●".repeat(G.badges.length)+"○".repeat(3-G.badges.length)+"  ¥"+G.money,575,68);ctx.fillText("Ball×"+G.bag.ball+"  Potion×"+G.bag.potion,575,90);if(G.party[0]){const m=G.party[0];ctx.fillText(SPECIES[m.sp].n+" Lv"+m.lvl+"  HP "+Math.max(0,m.hp)+"/"+m.maxhp,575,112);ctx.fillStyle="#333";ctx.fillRect(575,116,200,8);ctx.fillStyle=m.hp/m.maxhp>0.5?"#58d858":m.hp/m.maxhp>0.2?"#ffd23f":"#e84848";ctx.fillRect(575,116,200*clamp(m.hp/m.maxhp,0,1),8);}else{ctx.fillStyle="#ff8a9d";ctx.fillText("No creatures yet → visit LAB!",575,112);}}
+function dialogBox(){const y=H-150;ctx.fillStyle="#f4f1de";ctx.fillRect(16,y,W-32,134);ctx.fillStyle="#101230";ctx.fillRect(22,y+6,W-44,122);ctx.strokeStyle="#e84848";ctx.lineWidth=4;ctx.strokeRect(22,y+6,W-44,122);}
+function drawDialogOrMenu(){if(sub==="dialog"&&dlgLines.length){dialogBox();ctx.fillStyle="#fff";ctx.font="17px monospace";const line=dlgLines[0].slice(0,dlgChar);wrapText(line,44,H-108,17,880);if(dlgChar>=dlgLines[0].length&&Math.floor(frame/25)%2===0){ctx.fillStyle="#ffd23f";ctx.fillText("▼",W-60,H-30);}}
+else if(state==="over"&&!sub){dialogBox();ctx.fillStyle="#8a8aa8";ctx.font="15px monospace";ctx.fillText("Explore! Talk: A · Menu: START · DEX: SELECT · RUN from battles!",44,H-108);ctx.fillStyle="#fff";ctx.fillText("Move with WASD / arrows / stick. Press A facing people & doors.",44,H-84);}
+if(sub==="menu")drawStartMenu();if(sub==="party")drawParty();if(sub==="dex")drawDex();if(sub==="bag")drawBag();if(sub==="shop")drawShop();if(sub==="starter")drawStarter();if(sub==="help2")drawHelp2();}
+function wrapText(t,x,y,lh,mw){const words=t.split(" ");let line="",yy=y;ctx.font="17px monospace";for(const w of words){const test=line?line+" "+w:w;if(ctx.measureText(test).width>mw){ctx.fillText(line,x,yy);yy+=lh;line=w;}else line=test;}ctx.fillText(line,x,yy);}
+function drawStartMenu(){const items=["📕 POKEDEX","⚡ CREATURES","🎒 BAG","💾 SAVE","❓ HELP","🔊 SOUND: "+(muted?"OFF":"ON")];dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText("— MENU —",44,H-128);ctx.font="15px monospace";items.forEach((it,i)=>{ctx.fillStyle=i===menuIdx?"#ffd23f":"#fff";ctx.fillText((i===menuIdx?"▶ ":"  ")+it,44,H-106+i*15);});}
+function hpColor(m){return m.hp/m.maxhp>0.5?"#58d858":m.hp/m.maxhp>0.2?"#ffd23f":"#e84848";}
+function drawParty(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText(state==="battle"?"Choose a friend! (B: back)":"— YOUR TEAM — (B: back)",44,H-128);if(!G.party.length){ctx.fillStyle="#fff";ctx.font="15px monospace";ctx.fillText("Empty! Go to the LAB in PALLET TOWN.",44,H-95);return;}G.party.forEach((m,i)=>{const y=H-106+i*14;ctx.font="13px monospace";const sel=i===partyTab;ctx.fillStyle=sel?"#ffd23f":"#fff";const S=SPECIES[m.sp];ctx.fillText((sel?"▶ ":"  ")+S.n+" Lv"+m.lvl+"  HP "+Math.max(0,m.hp)+"/"+m.maxhp+(m.hp<=0?"  [fainted]":""),44,y);ctx.fillStyle="#333";ctx.fillRect(560,y-9,220,8);ctx.fillStyle=hpColor(m);ctx.fillRect(560,y-9,220*clamp(m.hp/m.maxhp,0,1),8);});if(sub==="party"&&state==="battle"&&Math.floor(frame/25)%2===0){ctx.fillStyle="#8a8aa8";ctx.font="12px monospace";ctx.fillText("A: send out · B: back",700,H-125);}}
+function drawDex(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText("— POKEDEX ("+Object.keys(G.dexCaught).length+"/"+DEX_ORDER.length+" caught) —",44,H-128);const start=Math.max(0,Math.min(dexTab-3,DEX_ORDER.length-6));for(let i=0;i<6;i++){const k=DEX_ORDER[start+i];if(!k)break;const seen=G.dexSeen[k],got=G.dexCaught[k];ctx.font="13px monospace";ctx.fillStyle=(start+i)===dexTab?"#ffd23f":"#fff";ctx.fillText(((start+i)===dexTab?"▶ ":"  ")+(seen?SPECIES[k].n:"???"),44,H-106+i*14);}const k=DEX_ORDER[dexTab],S=SPECIES[k];ctx.fillStyle="#fff";ctx.font="13px monospace";if(G.dexSeen[k]){drawMon(ctx,700,H-80,64,k,frame);ctx.fillText(S.n+"  "+S.t1+(S.t2?"/"+S.t2:""),560,H-100);wrapText(S.dex,560,H-80,15,340);}else{ctx.fillText("??? — undiscovered.",560,H-90);}}
+function drawBag(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText("— BAG —",44,H-125);ctx.font="16px monospace";const items=[["POKE BALL ×"+G.bag.ball,"Catch weakened wild friends"],["POTION ×"+G.bag.potion,"Restore 20 HP"]];items.forEach((it,i)=>{ctx.fillStyle=i===menuIdx?"#ffd23f":"#fff";ctx.fillText((i===menuIdx?"▶ ":"  ")+it[0]+"  — "+it[1],44,H-98+i*22);});ctx.fillStyle="#8a8aa8";ctx.font="13px monospace";ctx.fillText(state==="battle"?"A: use · B: back":"A: use on lead · B: back",44,H-40);}
+function drawShop(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText("MART — ¥"+G.money+"  (B: leave)",44,H-125);const items=[["POKE BALL — ¥200"],["POTION — ¥150"]];items.forEach((it,i)=>{ctx.fillStyle=i===shopIdx?"#ffd23f":"#fff";ctx.font="16px monospace";ctx.fillText((i===shopIdx?"▶ ":"  ")+it[0],44,H-98+i*24);});}
+function drawStarter(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 16px monospace";ctx.fillText("OAK: Choose your first friend!",44,H-125);const opts=[["pikachu","Electric mouse. Stays out of its ball!"],["charmander","Fire lizard. Strong vs GRASS."],["squirtle","Water turtle. Strong vs FIRE."]];opts.forEach((o,i)=>{drawMon(ctx,120+i*200,H-70,56,o[0],frame+i*8);ctx.font="14px monospace";ctx.fillStyle=i===menuIdx?"#ffd23f":"#fff";ctx.fillText((i===menuIdx?"▶ ":"  ")+SPECIES[o[0]].n,70+i*200,H-28);});}
+function drawHelp2(){dialogBox();ctx.fillStyle="#ffd23f";ctx.font="bold 15px monospace";ctx.fillText("HOW TO PLAY",44,H-125);ctx.fillStyle="#fff";ctx.font="13px monospace";ctx.fillText("Move WASD/arrows/stick. A=talk/confirm, B=cancel, START=menu.",44,H-102);ctx.fillText("Weaken wild friends, then BAG → BALL. Heal at red CENTERS.",44,H-82);ctx.fillText("Type edges: Water>Fire>Grass>Water; Electric>Water; Fire>Bug.",44,H-62);ctx.fillText("Rock>Fire/Flying. B: back. Your rival awaits at VERMILION.",44,H-42);}
+/* ---- battle render ---- */
+function drawBattle(){const B=battle;if(!B)return;const grd=ctx.createLinearGradient(0,0,0,H);grd.addColorStop(0,"#7ec8e8");grd.addColorStop(0.55,"#a8e0a0");grd.addColorStop(0.55,"#6fbf4a");grd.addColorStop(1,"#4e9e3a");ctx.fillStyle=grd;ctx.fillRect(0,0,W,H-150);
+ctx.fillStyle="rgba(255,255,255,.7)";for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse((i*260+frame*1.5)%W,60+i*30,50,14,0,0,7);ctx.fill();}
+const foe=foeMon(),me=G.party[B.me];
+ctx.fillStyle="rgba(0,0,0,.2)";ctx.beginPath();ctx.ellipse(680,300,120,26,0,0,7);ctx.fill();ctx.beginPath();ctx.ellipse(250,400,130,28,0,0,7);ctx.fill();
+if(foe){const ox=B.hitT?rnd(-6,6):0;drawMon(ctx,680+ox,230,120,foe.sp,frame);}
+if(me){const ox=B.hitM?rnd(-6,6):0;if(me.hp>0)drawMon(ctx,250+ox,340,130,me.sp,frame,true);if(B.ballAnim>0){ctx.strokeStyle="#e84848";ctx.lineWidth=4;ctx.beginPath();ctx.arc(680,230,30+ (20-B.ballAnim)*3,0,7);ctx.stroke();ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(680,230,12,0,7);ctx.fill();ctx.fillStyle="#e84848";ctx.beginPath();ctx.arc(680,230,12,Math.PI,0);ctx.fill();}}
+if(B.hitT>0)B.hitT--;if(B.hitM>0)B.hitM--;if(B.ballAnim>0)B.ballAnim--;
+plate(40,60,300,86,foe);plate(620,330,300,86,me,true);
+if(B.phase==="menu"&&!sub){ctx.fillStyle="#f4f1de";ctx.fillRect(W-330,H-280,314,116);ctx.fillStyle="#101230";ctx.fillRect(W-324,H-274,302,104);drawMenuGrid(B.menu);}
+if(B.phase==="moves"&&!sub){ctx.fillStyle="#f4f1de";ctx.fillRect(16,H-280,W-32,116);ctx.fillStyle="#101230";ctx.fillRect(22,H-274,W-44,104);const ms=me.moves;ms.forEach((mv,i)=>{const M=MOVES[mv];ctx.font="15px monospace";ctx.fillStyle=i===B.moveSel?"#ffd23f":"#fff";ctx.fillText((i===B.moveSel?"▶ ":"  ")+M.n+" ["+M.t+"] P"+M.p,50,H-244+i*24);});ctx.fillStyle="#8a8aa8";ctx.font="12px monospace";ctx.fillText("B: back",W-120,H-160);}}
+function drawMenuGrid(sel){const pos=[[W-310,H-246],[W-170,H-246],[W-310,H-212],[W-170,H-212]];ctx.font="bold 17px monospace";const opts=["FIGHT","BAG","TEAM","RUN"];opts.forEach((o,i)=>{ctx.fillStyle=sel===i?"#ffd23f":"#fff";ctx.fillText((sel===i?"▶ ":"  ")+o,pos[i][0],pos[i][1]);});}
+function plate(x,y,w,h,mon,isMe){if(!mon)return;ctx.fillStyle="#f4f1de";ctx.fillRect(x,y,w,h);ctx.fillStyle=isMe?"#3c78d8":"#e84848";ctx.fillRect(x,y,w,22);ctx.fillStyle="#fff";ctx.font="bold 14px monospace";const S=SPECIES[mon.sp];ctx.fillText((isMe?"":"FOE ")+S.n+" Lv"+mon.lvl,x+8,y+16);ctx.fillStyle="#222";ctx.fillRect(x+8,y+30,w-16,12);ctx.fillStyle=hpColor(mon);ctx.fillRect(x+8,y+30,(w-16)*clamp(mon.hp/mon.maxhp,0,1),12);ctx.fillStyle="#222";ctx.font="12px monospace";ctx.fillText(Math.max(0,mon.hp)+"/"+mon.maxhp,x+8,y+56);if(isMe&&G.party.length>1){ctx.fillText("("+G.party.length+" in team)",x+140,y+56);}}
+/* ============ SUBMENU INPUT ============ */
+function submenuInput(inp){if(sub==="dialog"){advanceDialog(inp);return true;}
+if(sub==="menu"){const n=6;if(inp.up)menuIdx=(menuIdx+n-1)%n;if(inp.down)menuIdx=(menuIdx+1)%n;if(inp.b||inp.select){sub=null;sfx.cancel();}if(inp.a||inp.start)openMenu(menuIdx);return true;}
+if(sub==="party"){if(!G.party.length){if(inp.b||inp.a)sub=state==="battle"?"bag":null;return true;}if(inp.up)partyTab=(partyTab+G.party.length-1)%G.party.length;if(inp.down)partyTab=(partyTab+1)%G.party.length;if(inp.b){sfx.cancel();sub=state==="battle"?(battle.phase==="switch"?"bag":null):null;if(state==="battle"&&battle.phase==="switch"){say("You must choose a friend!");sub="party";}return true;}if(inp.a){const m=G.party[partyTab];if(m.hp<=0){say(m.sp?"That friend fainted!":"");return true;}if(state==="battle"){if(partyTab===battle.me){sub=null;battle.phase="menu";}else{battle.me=partyTab;sub=null;sfx.confirm();const B=battle;B.phase="anim";say(["Go! "+SPECIES[m.sp].n+"!"],()=>{const fm=foePickMove(B.foe);const M=MOVES[fm];const r=dmgCalc(withStage(B.foe),withStage(m),fm);m.hp=Math.max(0,m.hp-(r.dmg||5));sfx.hit();say("Foe "+SPECIES[B.foe.sp].n+" used "+M.n+"! (-"+(r.dmg||5)+")",()=>{if(m.hp<=0)meDown();else B.phase="menu";});});}}else{sfx.confirm();const t=G.party[0];G.party[0]=G.party[partyTab];G.party[partyTab]=t;sub=null;}return true;}return true;}
+if(sub==="bag"){if(inp.up||inp.down){menuIdx=(menuIdx+1)%2;}if(inp.b){sfx.cancel();sub=state==="battle"?null:"menu";if(state==="battle")battle.phase="menu";return true;}if(inp.a){if(menuIdx===0){if(state==="battle"){sub=null;tryCatch();}else say("Save BALLS for wild friends in tall grass!");}else{if(state==="battle"){const m=G.party[battle.me];if(G.bag.potion<=0){say("No POTIONS left!");}else if(m.hp>=m.maxhp){say("HP already full!");}else{G.bag.potion--;m.hp=Math.min(m.maxhp,m.hp+20);sfx.heal();say("Used POTION! +20 HP.",()=>{battle.phase="menu";sub=null;});sub=null;}}else{const m=G.party[0];if(!m){sub=null;}else if(G.bag.potion<=0)say("No POTIONS left!");else{m.hp=Math.min(m.maxhp,m.hp+20);G.bag.potion--;sfx.heal();save();say("Healed "+SPECIES[m.sp].n+"!");}}}return true;}return true;}
+if(sub==="dex"){if(inp.up)dexTab=(dexTab+DEX_ORDER.length-1)%DEX_ORDER.length;if(inp.down)dexTab=(dexTab+1)%DEX_ORDER.length;if(inp.b||inp.a||inp.select){sub=null;sfx.cancel();}return true;}
+if(sub==="shop"){if(inp.up)shopIdx=(shopIdx+1)%2;if(inp.down)shopIdx=(shopIdx+1)%2;if(inp.b){sub=null;sfx.cancel();return true;}if(inp.a){const cost=shopIdx===0?200:150;if(G.money<cost){sfx.cancel();say("Not enough money! Beat trainers for ¥.");}else{G.money-=cost;if(shopIdx===0)G.bag.ball++;else G.bag.potion++;sfx.confirm();save();refreshHud();}return true;}return true;}
+if(sub==="starter"){if(inp.left)menuIdx=(menuIdx+2)%3;if(inp.right)menuIdx=(menuIdx+1)%3;if(inp.a){const picks=["pikachu","charmander","squirtle"];const rivals=["squirtle","squirtle","charmander"];const sp=picks[menuIdx];G.rivalPick=rivals[menuIdx];G.party.push(mkMon(sp,5));G.dexSeen[sp]=1;G.dexCaught[sp]=1;G.bag.ball+=3;sub=null;sfx.fanfare();save();refreshHud();say(["You received "+SPECIES[sp].n+"!","OAK: Raise it well! Heal at CENTERS.","RIVAL GARY got "+SPECIES[G.rivalPick].n+"!","Find him later... he wants to battle!"]);setTimeout(()=>{},0);}if(inp.b){}return true;}
+if(sub==="help2"){if(inp.a||inp.b)sub=null;return true;}
+return false;}
+/* ============ MAIN LOOP ============ */
+function tick(){pollPad();const inp=consume();const anyA=inp.a||inp.start;
+if(dlgChar<(dlgLines.length?dlgLines[0].length:0)&&sub==="dialog"){dlgTimer++;if(dlgTimer%2===0&&!muted&&AC)dlgChar+=textFast?4:1;}
+else if(sub==="dialog"&&dlgLines.length){dlgChar=dlgLines[0].length;}
+if(state==="title"){if(anyA||inp.select){audio();startMusic();sfx.confirm();if(hasSave()&&!G){if(load()){state="over";sub=null;refreshHud();say("Welcome back, champ!");}else{newGame();state="starterPick";sub="starter";menuIdx=0;}}else if(G&&G.party){state="over";refreshHud();}else if(load()&&hasStarter()){state="over";sub=null;refreshHud();}else{newGame();state="starterPick";sub="starter";menuIdx=0;refreshHud();}}render(inp);requestAnimationFrame(tick);return;}
+if(state==="starterPick"){if(submenuInput(inp)){}if(!sub&&G&&hasStarter()){state="over";save();refreshHud();}render(inp);requestAnimationFrame(tick);return;}
+if(state==="hall"){render(inp);if(keys["n"]||keys["N"]){try{localStorage.removeItem("pocketYellowSave");}catch(e){}G=null;state="title";refreshHudSafe();}else if(anyA){state="over";}requestAnimationFrame(tick);return;}
+if(state==="battle"){if(battle&&battle.ballAnim>0)battle.ballAnim-=0.5;if(sub&&submenuInput(inp)){}else if(sub==="dialog")advanceDialog(inp);else battleMenuInput(inp);render(inp);requestAnimationFrame(tick);return;}
+/* overworld */
+if(sub){submenuInput(inp);}
+else{if(inp.start){sub="menu";menuIdx=0;sfx.confirm();}else if(inp.select){sub="dex";sfx.confirm();}else if(inp.a){interact();}else{tryStep(inp);}}
+if(mvx!==0||mvy!==0){mvx-=Math.sign(mvx)*4;mvy-=Math.sign(mvy)*4;if(Math.abs(mvx)<4)mvx=0;if(Math.abs(mvy)<4)mvy=0;}
+render(inp);requestAnimationFrame(tick);}
+addEventListener("pointerdown",()=>{audio();startMusic();},{once:false});
+/* boot */
+(function(){if(!load()){G=null;}else{if(!G.bag)G.bag={ball:5,potion:3};}if(G&&G.party){state="title";}else{state="title";G=null;}window.__G=()=>G;refreshHudSafe();requestAnimationFrame(tick);})();
+function refreshHudSafe(){try{if(G)refreshHud();else{$("hBadges").textContent="🎖 0/3";$("hDex").textContent="📕 0 seen / 0 caught";$("hMoney").textContent="💰 ¥3000";$("hLoc").textContent="PRESS ENTER";}}catch(e){}}
+setInterval(()=>{if(G){try{save();}catch(e){}}},10000);
+</script>
+</body>
+</html>
